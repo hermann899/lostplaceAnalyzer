@@ -227,19 +227,15 @@
               </label>
               <label class="small">
                 Min-Fläche (px)
-                <input id="minArea" type="number" min="10" step="10" value="800" />
+                <input id="minArea" type="number" min="10" step="10" value="600" />
               </label>
               <label class="small">
                 Max-Fläche (px)
-                <input id="maxArea" type="number" min="50" step="50" value="2000" />
+                <input id="maxArea" type="number" min="50" step="50" value="65000" />
               </label>
               <label class="small">
                 Max Kandidaten
-                <input id="maxCandidates" type="number" min="1" max="200" step="1" value="5" />
-              </label>
-              <label class="small">
-                Min. KI-Wahrscheinlichkeit (0–1)
-                <input id="minScore" type="number" min="0" max="1" step="0.05" value="0.3" />
+                <input id="maxCandidates" type="number" min="1" max="200" step="1" value="30" />
               </label>
               <label class="small">
                 Fokus: „verfallen/zerstört“
@@ -553,8 +549,7 @@
         const vegFrac = clamp(veg / n, 0, 1);
         const centerFrac = centerCount ? vegCenter / centerCount : 0;
         const borderFrac = borderCount ? vegBorder / borderCount : 0;
-        // stärkerer Fokus auf Vegetation, die wirklich im Dachbereich "sitzt"
-        const vegCenterContrast = clamp((centerFrac - borderFrac) * 1.6 + 0.15, 0, 1);
+        const vegCenterContrast = clamp(centerFrac - borderFrac + 0.2, 0, 1); // leichter Bias Richtung "mehr im Zentrum"
 
         // geometry terms (from box)
         const aspect = w >= h ? (w / h) : (h / w);
@@ -606,15 +601,13 @@
         for (const c of candidates) {
           const prob = c.ml?.prob ?? 0.5;
           const damage = c.damageScore ?? 0;
-          const comb = typeof c.combinedScore === "number" ? c.combinedScore : prob;
-          const cond = conditionShort(c.condition);
           const col = prob >= 0.66 ? "rgba(52,211,153,0.95)" : prob <= 0.34 ? "rgba(251,113,133,0.95)" : "rgba(125,211,252,0.95)";
           ctx.strokeStyle = col;
           ctx.fillStyle = "rgba(0,0,0,0.28)";
           ctx.strokeRect(c.box.x, c.box.y, c.box.w, c.box.h);
           ctx.fillRect(c.box.x, c.box.y, c.box.w, 18);
           ctx.fillStyle = "rgba(255,255,255,0.92)";
-          ctx.fillText(`#${c.id}  p=${prob.toFixed(2)}  s=${comb.toFixed(2)}  dmg=${damage.toFixed(2)} ${cond ? "[" + cond + "]" : ""}`, c.box.x + 4, c.box.y + 2);
+          ctx.fillText(`#${c.id}  p=${prob.toFixed(2)}  dmg=${damage.toFixed(2)}`, c.box.x + 4, c.box.y + 2);
         }
       }
 
@@ -637,8 +630,6 @@
           const prob = c.ml?.prob ?? 0.5;
           const badgeClass = prob >= 0.66 ? "good" : prob <= 0.34 ? "bad" : "neutral";
           const label = prob >= 0.66 ? "wahrscheinlich relevant" : prob <= 0.34 ? "wahrscheinlich irrelevant" : "unsicher";
-          const condLabel = c.condition ? `Zustand: ${c.condition}` : "";
-          const comb = typeof c.combinedScore === "number" ? c.combinedScore : prob;
 
           div.innerHTML = `
             <div class="itemTop">
@@ -651,8 +642,7 @@
               <button class="btnMini" data-act="zoom" data-id="${c.id}">Fokus</button>
             </div>
             <div class="small" style="margin-top:8px">
-              heur. Scores: roof=${(c.roofLikelihood ?? 0).toFixed(2)}, tgt=${c.damageScore.toFixed(2)}, overgrown=${(c.overgrownScore ?? 0).toFixed(2)}, rectFill=${c.rectFill.toFixed(2)}, irregular=${c.irregularity.toFixed(2)}, veg=${(c.features[9] ?? 0).toFixed(2)}, vegCenter=${(c.features[10] ?? 0).toFixed(2)}, s=${comb.toFixed(2)}<br/>
-              ${condLabel}
+              heur. Scores: roof=${(c.roofLikelihood ?? 0).toFixed(2)}, tgt=${c.damageScore.toFixed(2)}, overgrown=${(c.overgrownScore ?? 0).toFixed(2)}, rectFill=${c.rectFill.toFixed(2)}, irregular=${c.irregularity.toFixed(2)}, veg=${(c.features[9] ?? 0).toFixed(2)}, vegCenter=${(c.features[10] ?? 0).toFixed(2)}
             </div>
           `;
           frag.appendChild(div);
@@ -711,101 +701,19 @@
 
       function sortCandidates(a, b) {
         const mode = $("mode").value;
-        const sa = typeof a.combinedScore === "number" ? a.combinedScore : (a.ml?.prob ?? 0.5);
-        const sb = typeof b.combinedScore === "number" ? b.combinedScore : (b.ml?.prob ?? 0.5);
         if (mode === "damage") {
           // priorisiere kombinierten Ziel-Score (Zerstörung/Überwucherung), dann ML-Probability
           if (b.damageScore !== a.damageScore) return b.damageScore - a.damageScore;
-          if (sb !== sa) return sb - sa;
         } else if (mode === "building") {
           // eher „gute“ Dächer: hohe Dach-Likelihood
           if ((b.roofLikelihood ?? 0) !== (a.roofLikelihood ?? 0)) {
             return (b.roofLikelihood ?? 0) - (a.roofLikelihood ?? 0);
           }
-          if (sb !== sa) return sb - sa;
         }
         const pa = a.ml?.prob ?? 0.5;
         const pb = b.ml?.prob ?? 0.5;
         if (pb !== pa) return pb - pa;
         return (b.box.w * b.box.h) - (a.box.w * a.box.h);
-      }
-
-      function getMinScoreThreshold() {
-        const el = $("minScore");
-        if (!el) return 0;
-        const v = parseFloat(el.value);
-        if (!Number.isFinite(v)) return 0;
-        return clamp(v, 0, 1);
-      }
-
-      function classifyCondition(metrics, features) {
-        const dmg = metrics.damageScore ?? 0;
-        const over = metrics.overgrownScore ?? 0;
-        const tgt = metrics.targetScore ?? 0;
-        const roof = metrics.roofLikelihood ?? 0;
-        const veg = features[9] ?? 0;
-        const vegCenterC = features[10] ?? 0;
-        const shadow = features[8] ?? 0;
-        const texture = features[4] ?? 0;
-
-        let label = "unbestimmt";
-        // reine Vegetation (Wald) ohne klares Dach
-        if (roof < 0.25 && veg >= 0.6 && vegCenterC < 0.3 && tgt < 0.4) {
-          label = "Vegetation (kein Dach)";
-        } else if (over >= 0.65 && veg >= 0.4 && roof >= 0.25) {
-          label = "eingewachsen";
-        } else if (dmg >= 0.65 && shadow >= 0.35 && texture >= 0.35) {
-          label = "stark beschädigt";
-        } else if (dmg >= 0.4 || over >= 0.4 || tgt >= 0.45) {
-          label = "alt / abgenutzt";
-        } else if (roof >= 0.55 && tgt < 0.35) {
-          label = "weitgehend intakt";
-        }
-        return label;
-      }
-
-      function conditionShort(label) {
-        if (!label) return "";
-        if (label.startsWith("eingew")) return "E";
-        if (label.startsWith("stark beschädigt")) return "Z";
-        if (label.startsWith("alt / abgenutzt")) return "A";
-        if (label.startsWith("weitgehend intakt")) return "I";
-        return "?";
-      }
-
-      function boxIoU(a, b) {
-        const ax1 = a.box.x;
-        const ay1 = a.box.y;
-        const ax2 = a.box.x + a.box.w;
-        const ay2 = a.box.y + a.box.h;
-        const bx1 = b.box.x;
-        const by1 = b.box.y;
-        const bx2 = b.box.x + b.box.w;
-        const by2 = b.box.y + b.box.h;
-
-        const ix1 = Math.max(ax1, bx1);
-        const iy1 = Math.max(ay1, by1);
-        const ix2 = Math.min(ax2, bx2);
-        const iy2 = Math.min(ay2, by2);
-        const iw = Math.max(0, ix2 - ix1);
-        const ih = Math.max(0, iy2 - iy1);
-        const inter = iw * ih;
-        if (inter <= 0) return 0;
-        const areaA = Math.max(0, ax2 - ax1) * Math.max(0, ay2 - ay1);
-        const areaB = Math.max(0, bx2 - bx1) * Math.max(0, by2 - by1);
-        const uni = areaA + areaB - inter;
-        return uni > 0 ? inter / uni : 0;
-      }
-
-      function nonMaxSuppress(sortedCandidates, iouThreshold = 0.4) {
-        const kept = [];
-        outer: for (const c of sortedCandidates) {
-          for (const k of kept) {
-            if (boxIoU(c, k) >= iouThreshold) continue outer;
-          }
-          kept.push(c);
-        }
-        return kept;
       }
 
       function computeRoofMetrics(features) {
@@ -820,62 +728,44 @@
         const veg = features[9] ?? 0;
         const vegCenter = features[10] ?? 0;
 
-        // Dach-Likelihood: starke rechteckige Füllung + plausibles Seitenverhältnis + wenig chaotische Kontur
-        const geomAspect = 1 - clamp(Math.abs(aspect - 1.4) / 2.2, 0, 1);
+        // Dach-Likelihood: Geometrie (rechteckig, moderates Seitenverhältnis, nicht völlig chaotisch)
+        const geomAspect = 1 - clamp(Math.abs(aspect - 1.5) / 2.5, 0, 1);
         const roofLikelihood = clamp(
-          0.52 * rectFill +
-          0.30 * geomAspect +
-          0.18 * (1 - irregular),
+          0.5 * rectFill +
+          0.3 * geomAspect +
+          0.2 * (1 - irregular),
           0,
           1
         );
 
-        // Basis-Schadensmaß: sehr texturiert, hohe Entropie, viele Kanten und Schatten, unregelmäßige Kontur, wenig rechteckige Füllung
-        const baseDamage = clamp(
-          0.28 * texture +
-          0.23 * entropy +
-          0.18 * edge +
-          0.17 * shadow +
-          0.09 * irregular +
-          0.05 * (1 - rectFill),
-          0,
-          1
-        );
-
-        // Verstärke Schaden nur dort, wo die Region dachähnlich ist
+        // Stark zerstörtes/verfallenes Dach: viel Textur/Entropie/Schattierung, wenig rechteckige Füllung
+        const aspectPenalty = clamp(Math.abs(aspect - 1.0) / 3, 0, 1);
         const damageScore = clamp(
-          baseDamage * (0.4 + 0.6 * roofLikelihood) +
-          0.06 * veg * 0.5 +
-          0.06 * vegCenter * 0.5,
+          0.24 * texture +
+          0.20 * entropy +
+          0.18 * edge +
+          0.16 * shadow +
+          0.10 * irregular +
+          0.12 * (1 - rectFill) -
+          0.06 * aspectPenalty,
           0,
           1
         );
 
-        // Eingewachsenes Dach: viel Vegetation, besonders im Zentrum, wenig harte Schatten
-        const overgrownRaw = clamp(
-          0.58 * veg +
-          0.26 * vegCenter +
-          0.10 * texture -
-          0.10 * shadow,
-          0,
-          1
-        );
-        // Verstärke "eingewachsen" nur, wenn auch rechteckige Dachstruktur vorhanden ist
+        // Eingewachsenes Dach: viel Vegetation, besonders im Zentrum der Box, eher weniger harte Schatten
         const overgrownScore = clamp(
-          overgrownRaw * (0.45 + 0.55 * rectFill),
+          0.55 * veg +
+          0.25 * vegCenter +
+          0.10 * texture +
+          0.10 * (1 - shadow),
           0,
           1
         );
 
-        // Kombinierter Ziel-Score für „eingewachsen / zerstört“, zusätzlich durch Dach-Likelihood moduliert
-        let targetScore;
-        if (overgrownScore > damageScore) {
-          targetScore = 0.65 * overgrownScore + 0.35 * damageScore;
-        } else {
-          targetScore = 0.65 * damageScore + 0.35 * overgrownScore;
-        }
-        targetScore = clamp(
-          targetScore * (0.35 + 0.65 * roofLikelihood),
+        // Kombinierter Ziel-Score für „eingewachsen / zerstört“
+        const targetScore = clamp(
+          0.6 * damageScore +
+          0.4 * overgrownScore,
           0,
           1
         );
@@ -894,8 +784,6 @@
         const thr2 = clamp(Number($("thrCanny2").value || 140), 1, 255);
         const minArea = Math.max(10, Number($("minArea").value || 600));
         const maxArea = Math.max(minArea + 1, Number($("maxArea").value || 65000));
-        const modeVal = $("mode").value;
-        const minScore = getMinScoreThreshold();
 
         // draw source to working canvas
         const w = sourceCanvas.width;
@@ -937,19 +825,6 @@
             const area = rect.width * rect.height;
             if (area < minArea || area > maxArea) continue;
 
-            // sehr langgezogene / winzige Strukturen (Straßen, schmale Kanten etc.) ausfiltern
-            const shortSide = Math.min(rect.width, rect.height);
-            const longSide = Math.max(rect.width, rect.height);
-            if (shortSide < 10) {
-              cnt.delete();
-              continue;
-            }
-            const rawAspect = longSide / Math.max(1, shortSide);
-            if (rawAspect > 8.0) {
-              cnt.delete();
-              continue;
-            }
-
             // shape approx for rectangularity and irregularity
             const peri = cv.arcLength(cnt, true);
             const approx = new cv.Mat();
@@ -966,77 +841,14 @@
 
             const metrics = computeRoofMetrics(features);
 
-            // Heuristische Filter, um offensichtliche Nicht-Dächer früh zu verwerfen.
-            const edgeD = features[3] ?? 0;
-            const texture = features[4] ?? 0;
-            const entropy = features[6] ?? 0;
-            const vegFrac = features[9] ?? 0;
-            const vegCenterC = features[10] ?? 0;
-
-            // sehr waldartige Flächen ohne klare Dach-Geometrie entfernen:
-            // viel Vegetation, wenig Kontrast Zentrum/Rand, schwache Dach-Likelihood
-            const tooVegetated = vegFrac > 0.75 && vegCenterC < 0.25 && metrics.roofLikelihood < 0.40 && metrics.overgrownScore < 0.90;
-            // sehr homogene, kantenarme Flächen (Felder/Boden) aussortieren
-            const tooHomogeneousGround = texture < 0.10 && entropy < 0.14 && edgeD < 0.07 && metrics.roofLikelihood < 0.60;
-
-            // Nur dachartige Strukturen weiterverfolgen.
-            // Im Modus "damage" zusätzlich stärker auf eingewachsen/zerstört filtern,
-            // im Modus "building" etwas großzügiger, damit Dächer nicht komplett wegfallen.
-            const dmgOrOvergrown = Math.max(metrics.damageScore, metrics.overgrownScore);
-            const target = metrics.targetScore;
-            const rf = rectFill;
-            const irr = irregularity;
-            const aspect = features[2] ?? 1;
-            const aspectOk = aspect >= 0.5 && aspect <= 4.5;
-            const rectOk = rf >= 0.26;
-            const irrOk = irr <= 0.8;
-            let reject = false;
-            if (modeVal === "damage") {
-              reject =
-                metrics.roofLikelihood < 0.09 ||
-                (metrics.roofLikelihood < 0.20 && dmgOrOvergrown < 0.50) ||
-                target < 0.24;
-            } else {
-              // building: primär Dach-Form, sehr schwach eingewachsene/zerstörte Dächer bleiben trotzdem drin
-              reject = metrics.roofLikelihood < 0.24 || target < 0.14;
-            }
-            // sehr "un-dachige" Geometrien wegfiltern, aber leicht unregelmäßige Dächer zulassen
-            if (!aspectOk || !irrOk || (!rectOk && metrics.roofLikelihood < 0.65)) reject = true;
-            if (tooVegetated || tooHomogeneousGround) reject = true;
-            if (reject) {
+            // Nur dachartige Strukturen weiterverfolgen
+            if (metrics.roofLikelihood < 0.12) {
               approx.delete();
               cnt.delete();
               continue;
             }
 
             const ml = knnPredict(features);
-            const mlProb = ml.prob ?? 0.5;
-            let combinedScore;
-            if (modeVal === "damage") {
-              combinedScore = clamp(
-                0.45 * mlProb +
-                0.30 * metrics.targetScore +
-                0.15 * Math.max(metrics.damageScore, metrics.overgrownScore) +
-                0.10 * metrics.roofLikelihood,
-                0,
-                1
-              );
-            } else {
-              combinedScore = clamp(
-                0.35 * mlProb +
-                0.40 * metrics.roofLikelihood +
-                0.15 * (1 - metrics.overgrownScore) +
-                0.10 * (1 - metrics.damageScore),
-                0,
-                1
-              );
-            }
-            const condition = classifyCondition(metrics, features);
-            // reine Vegetation soll trotz guter Heuristik einen niedrigeren Gesamtscore erhalten,
-            // damit sie mit dem minScore-Slider leichter ausgefiltert werden kann.
-            if (condition === "Vegetation (kein Dach)") {
-              combinedScore *= 0.4;
-            }
 
             candidates.push({
               id: candidates.length + 1,
@@ -1045,8 +857,6 @@
               rectFill,
               irregularity,
               ml,
-              combinedScore,
-              condition,
               damageScore: metrics.targetScore,
               roofLikelihood: metrics.roofLikelihood,
               overgrownScore: metrics.overgrownScore,
@@ -1057,16 +867,8 @@
             cnt.delete();
           }
 
-          // Score-Schwelle anwenden (kombinierter KI-Score 0–1),
-          // dann Kandidaten nach Heuristik/ML sortieren und überlappende Boxen per NMS unterdrücken,
-          // um mehrere Boxen auf demselben Dach zu vermeiden.
-          const scored = candidates.filter((c) => {
-            const s = typeof c.combinedScore === "number" ? c.combinedScore : (c.ml?.prob ?? 0.5);
-            return s >= minScore;
-          });
-          const sorted = scored.sort(sortCandidates);
-          const nms = nonMaxSuppress(sorted, 0.4);
-          analysis.candidates = nms.slice(0, maxCandidates).map((c, idx) => ({ ...c, id: idx + 1 }));
+          candidates.sort(sortCandidates);
+          analysis.candidates = candidates.slice(0, maxCandidates).map((c, idx) => ({ ...c, id: idx + 1 }));
           analysis.lastRun = {
             at: nowIso(),
             thr1,
@@ -1257,9 +1059,9 @@
 
         // safety cap: avoid huge downloads
         const tilesX = (max.x - min.x + 1);
-          const tilesY = (max.y - min.y + 1);
-          const tileCount = tilesX * tilesY;
-          const maxTiles = 64; // ~8x8
+        const tilesY = (max.y - min.y + 1);
+        const tileCount = tilesX * tilesY;
+        const maxTiles = 64; // ~8x8
         if (tileCount > maxTiles) {
           throw new Error(`Zu viele Tiles (${tileCount}). Zoome näher ran oder verkleinere das Fenster.`);
         }
