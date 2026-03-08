@@ -1,0 +1,1367 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Satellite Structure Analyzer (Single-File)</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0f14;
+        --panel: #0f1722;
+        --panel2: #0c1420;
+        --border: rgba(255, 255, 255, 0.10);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.72);
+        --muted2: rgba(255, 255, 255, 0.55);
+        --accent: #7dd3fc;
+        --accent2: #a7f3d0;
+        --warn: #fbbf24;
+        --bad: #fb7185;
+        --good: #34d399;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif; }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .app {
+        height: 100%;
+        display: grid;
+        grid-template-columns: 420px 1fr;
+        gap: 12px;
+        padding: 12px;
+      }
+      .panel {
+        background: linear-gradient(180deg, var(--panel), var(--panel2));
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .panel header {
+        padding: 14px 14px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+      .panel header h1 {
+        font-size: 14px;
+        margin: 0 0 6px;
+        letter-spacing: 0.2px;
+      }
+      .panel header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .content {
+        padding: 12px 14px 14px;
+        overflow: auto;
+        min-height: 0;
+      }
+      .section { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--border); }
+      .section:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+      .section h2 { font-size: 12px; margin: 0 0 8px; color: rgba(255,255,255,0.86); }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+      .row > * { flex: 1 1 auto; }
+      button, input[type="file"], input[type="number"], input[type="text"], select {
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.14);
+        color: var(--text);
+        border-radius: 10px;
+        padding: 10px 10px;
+        font-size: 12px;
+        outline: none;
+      }
+      button { cursor: pointer; transition: transform 0.04s ease, background 0.1s ease, border-color 0.1s ease; }
+      button:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.22); }
+      button:active { transform: translateY(1px); }
+      button.primary { background: rgba(125, 211, 252, 0.12); border-color: rgba(125, 211, 252, 0.35); }
+      button.primary:hover { background: rgba(125, 211, 252, 0.16); }
+      button.danger { background: rgba(251, 113, 133, 0.10); border-color: rgba(251, 113, 133, 0.28); }
+      .pill {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        padding: 7px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255,255,255,0.04);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .pill b { color: var(--text); font-weight: 600; }
+      .twoCol { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .hint { color: var(--muted2); font-size: 12px; line-height: 1.35; }
+      .small { font-size: 11px; color: var(--muted2); line-height: 1.35; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+      #map {
+        width: 100%;
+        height: 100%;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+      }
+      .mapWrap { position: relative; min-height: 0; }
+      .toast {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        right: 12px;
+        pointer-events: none;
+        display: flex;
+        justify-content: flex-start;
+      }
+      .toast > div {
+        pointer-events: all;
+        background: rgba(8, 12, 18, 0.78);
+        border: 1px solid rgba(255,255,255,0.16);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        padding: 10px 12px;
+        max-width: 680px;
+        box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+      }
+      .toastTitle { font-size: 12px; margin: 0 0 2px; }
+      .toastBody { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.35; }
+      .kbd {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 11px;
+        border: 1px solid rgba(255,255,255,0.18);
+        background: rgba(255,255,255,0.04);
+        padding: 2px 6px;
+        border-radius: 8px;
+      }
+      .canvasBox {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        background: rgba(0,0,0,0.25);
+      }
+      canvas { display: block; width: 100%; height: auto; }
+      .list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .item {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px;
+        background: rgba(255,255,255,0.03);
+      }
+      .itemTop {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: baseline;
+        margin-bottom: 6px;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        border: 1px solid rgba(255,255,255,0.14);
+        color: rgba(255,255,255,0.85);
+        background: rgba(255,255,255,0.05);
+        white-space: nowrap;
+      }
+      .badge.bad { border-color: rgba(251,113,133,0.35); background: rgba(251,113,133,0.10); }
+      .badge.good { border-color: rgba(52,211,153,0.35); background: rgba(52,211,153,0.10); }
+      .badge.neutral { border-color: rgba(255,255,255,0.16); }
+      .btnMini { padding: 7px 9px; border-radius: 10px; font-size: 11px; }
+      .footerLine { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+      .dangerText { color: rgba(251,113,133,0.92); }
+      @media (max-width: 1020px) {
+        .app { grid-template-columns: 1fr; }
+        #map { height: 52vh; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="panel">
+        <header>
+          <h1>Satellitenbild + Struktur-Detektor (Single-HTML)</h1>
+          <p>
+            Analyse läuft <b>offline im Browser</b> entweder direkt aus der aktuellen Kartenansicht (wenn der Tile-Server CORS erlaubt) oder auf einem Bild, das du hochlädst.
+            Danach kannst du Ergebnisse mit <span class="kbd">Ja</span>/<span class="kbd">Nein</span> labeln, wodurch ein einfacher Lernmechanismus (kNN) besser wird.
+          </p>
+        </header>
+        <div class="content">
+          <div class="section">
+            <h2>1) Bildquelle für Analyse</h2>
+            <div class="row">
+              <input id="fileInput" type="file" accept="image/*" />
+              <button id="btnClearImage" class="danger">Bild entfernen</button>
+            </div>
+            <div class="hint" style="margin-top:8px">
+              Du kannst auch „Analyse aus Kartenansicht“ nutzen. Falls das wegen CORS blockiert ist, nimm Upload (Screenshot/Export).
+            </div>
+            <div class="footerLine">
+              <div class="pill"><b>Status</b> <span id="opencvStatus">Lade OpenCV.js…</span></div>
+              <div class="pill" style="margin-left:8px"><b>Model</b> <span id="modelStatus">0 Trainingsbeispiele</span></div>
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>2) Detektor-Einstellungen</h2>
+            <div class="twoCol">
+              <label class="small">
+                Kanten-Schwellwert (Canny)
+                <input id="thrCanny" type="number" min="1" max="255" step="1" value="60" />
+              </label>
+              <label class="small">
+                Kanten-Schwellwert 2
+                <input id="thrCanny2" type="number" min="1" max="255" step="1" value="140" />
+              </label>
+              <label class="small">
+                Min-Fläche (px)
+                <input id="minArea" type="number" min="10" step="10" value="800" />
+              </label>
+              <label class="small">
+                Max-Fläche (px)
+                <input id="maxArea" type="number" min="50" step="50" value="2000" />
+              </label>
+              <label class="small">
+                Max Kandidaten
+                <input id="maxCandidates" type="number" min="1" max="200" step="1" value="5" />
+              </label>
+              <label class="small">
+                Min. KI-Wahrscheinlichkeit (0–1)
+                <input id="minScore" type="number" min="0" max="1" step="0.05" value="0.3" />
+              </label>
+              <label class="small">
+                Fokus: „verfallen/zerstört“
+                <select id="mode">
+                  <option value="damage">Schadens-Score priorisieren</option>
+                  <option value="building">Gebäude-ähnliche Formen</option>
+                </select>
+              </label>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <button id="btnAnalyze" class="primary">Analyse starten</button>
+              <button id="btnAnalyzeMap" class="primary">Analyse aus Kartenansicht</button>
+              <button id="btnToggleOverlay">Overlay an/aus</button>
+              <button id="btnResetView">Ansicht zurücksetzen</button>
+            </div>
+            <div class="hint" style="margin-top:8px">
+              Die Erkennung ist heuristisch (klassische CV) + kNN-Feedback. Für „echtes“ Deep Learning bräuchte man ein trainiertes Modell + passenden Datensatz.
+            </div>
+          </div>
+
+          <div class="section">
+            <h2>3) Ergebnisse + Feedback (lernend)</h2>
+            <div class="row">
+              <button id="btnExport">Training exportieren (JSON)</button>
+              <button id="btnImport">Training importieren (JSON)</button>
+              <button id="btnWipe" class="danger">Training löschen</button>
+            </div>
+            <input id="importFile" type="file" accept="application/json" style="display:none" />
+            <div class="hint" style="margin-top:8px">
+              Klicke ein Ergebnis an, bewerte es mit Ja/Nein. Das speichert Feature-Vektoren lokal und verbessert die automatische Einstufung.
+            </div>
+            <div id="results" class="list" style="margin-top:10px"></div>
+          </div>
+
+          <div class="section">
+            <h2>Info</h2>
+            <div class="small">
+              - Karte nutzt eine frei verfügbare Satelliten-Kachelquelle (nur Anzeige).<br/>
+              - Analyse läuft auf Upload-Bild, damit Canvas nicht „tainted“ wird.<br/>
+              - Speicherung: LocalStorage + Export/Import JSON (Download/Datei-Auswahl).<br/>
+              - Datenschutz: Alles bleibt lokal in deinem Browser.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mapWrap">
+        <div id="map"></div>
+        <div class="toast" id="toast" style="display:none">
+          <div>
+            <p class="toastTitle" id="toastTitle">Hinweis</p>
+            <p class="toastBody" id="toastBody"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script async src="https://docs.opencv.org/4.10.0/opencv.js"></script>
+    <script>
+      // ------------------------------
+      // Small utilities
+      // ------------------------------
+      const $ = (id) => document.getElementById(id);
+      const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+      const nowIso = () => new Date().toISOString();
+
+      function toast(title, body, ms = 3200) {
+        $("toastTitle").textContent = title;
+        $("toastBody").textContent = body;
+        $("toast").style.display = "flex";
+        window.clearTimeout(toast._t);
+        toast._t = window.setTimeout(() => ($("toast").style.display = "none"), ms);
+      }
+
+      // ------------------------------
+      // Map (display only)
+      // ------------------------------
+      const map = L.map("map", { zoomControl: true }).setView([51.1657, 10.4515], 6);
+      const esri = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 19, attribution: "Tiles © Esri — World Imagery (Anzeige)" }
+      );
+      esri.addTo(map);
+      const overlayGroup = L.layerGroup().addTo(map);
+
+      let lastClickLatLng = null;
+      map.on("click", (e) => {
+        lastClickLatLng = e.latlng;
+        toast("Klick registriert", `Lat ${e.latlng.lat.toFixed(6)}, Lng ${e.latlng.lng.toFixed(6)}. Analyse läuft auf Upload-Bild.`);
+      });
+
+      // ------------------------------
+      // Offline image analysis pipeline (OpenCV.js)
+      // ------------------------------
+      let cvReady = false;
+      let uploaded = { imgEl: null, width: 0, height: 0 };
+      let analysis = {
+        candidates: [],
+        overlayVisible: true,
+        lastRun: null,
+        source: "none", // "upload" | "map"
+      };
+
+      // Canvas elements created on demand
+      const work = {
+        inputCanvas: document.createElement("canvas"),
+        overlayCanvas: document.createElement("canvas"),
+        inputCtx: null,
+        overlayCtx: null,
+      };
+      work.inputCtx = work.inputCanvas.getContext("2d", { willReadFrequently: true });
+      work.overlayCtx = work.overlayCanvas.getContext("2d");
+
+      // ------------------------------
+      // "Self-learning" storage (simple kNN classifier)
+      // ------------------------------
+      const STORE_KEY = "sat_analyzer_training_v1";
+      const DEFAULT_TRAINING = { version: 1, updatedAt: null, samples: [] };
+      // sample: { id, label: 1|0, features: number[], meta: { createdAt, note? } }
+
+      function loadTraining() {
+        try {
+          const raw = localStorage.getItem(STORE_KEY);
+          if (!raw) return structuredClone(DEFAULT_TRAINING);
+          const obj = JSON.parse(raw);
+          if (!obj || typeof obj !== "object" || !Array.isArray(obj.samples)) return structuredClone(DEFAULT_TRAINING);
+          if (obj.version !== 1) return structuredClone(DEFAULT_TRAINING);
+          return obj;
+        } catch {
+          return structuredClone(DEFAULT_TRAINING);
+        }
+      }
+
+      function saveTraining(training) {
+        training.updatedAt = nowIso();
+        localStorage.setItem(STORE_KEY, JSON.stringify(training));
+        renderModelStatus();
+      }
+
+      let training = loadTraining();
+
+      function renderModelStatus() {
+        const n = training.samples.length;
+        const yes = training.samples.filter((s) => s.label === 1).length;
+        const no = n - yes;
+        $("modelStatus").textContent = `${n} Trainingsbeispiele (Ja: ${yes}, Nein: ${no})`;
+      }
+
+      function l2(a, b) {
+        let s = 0;
+        const n = Math.min(a.length, b.length);
+        for (let i = 0; i < n; i++) {
+          const d = a[i] - b[i];
+          s += d * d;
+        }
+        return Math.sqrt(s);
+      }
+
+      function knnPredict(features, k = 7) {
+        const samples = training.samples;
+        if (!samples.length) return { prob: 0.5, kUsed: 0, neighbors: [] };
+        const scored = samples
+          .map((s) => ({ s, dist: l2(features, s.features) }))
+          .sort((a, b) => a.dist - b.dist)
+          .slice(0, clamp(k, 1, samples.length));
+
+        // distance-weighted vote
+        let wYes = 0, wNo = 0;
+        for (const { s, dist } of scored) {
+          const w = 1 / (1e-6 + dist);
+          if (s.label === 1) wYes += w; else wNo += w;
+        }
+        const prob = (wYes + wNo) ? (wYes / (wYes + wNo)) : 0.5;
+        return { prob, kUsed: scored.length, neighbors: scored };
+      }
+
+      function normalizeFeatures(f) {
+        // Keep stable ranges, avoid outliers dominating.
+        // f = [areaNorm, rectFill, aspect, edgeDensity, texture, colorVar, entropyApprox, irregularity, shadowScore, vegFrac, vegCenterContrast]
+        const val = (idx, lo, hi) => {
+          const v = Array.isArray(f) && typeof f[idx] === "number" && Number.isFinite(f[idx]) ? f[idx] : 0;
+          return clamp(v, lo, hi);
+        };
+        return [
+          val(0, 0, 1),
+          val(1, 0, 1),
+          val(2, 0, 5),
+          val(3, 0, 1),
+          val(4, 0, 1),
+          val(5, 0, 1),
+          val(6, 0, 1),
+          val(7, 0, 1),
+          val(8, 0, 1),
+          val(9, 0, 1),
+          val(10, 0, 1),
+        ];
+      }
+
+      // ------------------------------
+      // Feature extraction from a candidate box
+      // ------------------------------
+      function extractFeaturesFromBox(imageData, box) {
+        const { data, width, height } = imageData;
+        const x0 = clamp(Math.floor(box.x), 0, width - 1);
+        const y0 = clamp(Math.floor(box.y), 0, height - 1);
+        const x1 = clamp(Math.floor(box.x + box.w), 0, width);
+        const y1 = clamp(Math.floor(box.y + box.h), 0, height);
+        const w = Math.max(1, x1 - x0);
+        const h = Math.max(1, y1 - y0);
+        const area = w * h;
+
+        // Compute basic stats on luminance, saturation and simple vegetation proxy
+        let sumY = 0, sumY2 = 0;
+        let sumS = 0, sumS2 = 0;
+        let dark = 0;
+        const hist = new Uint32Array(16);
+
+        // Simple edge proxy: count strong luminance differences horizontally/vertically
+        let edges = 0;
+        let veg = 0;
+        let vegCenter = 0;
+        let vegBorder = 0;
+        let centerCount = 0;
+        let borderCount = 0;
+        const step = (area > 90000) ? 2 : 1; // speed
+        const idx = (x, y) => (y * width + x) * 4;
+
+        const cx0 = x0 + w * 0.25;
+        const cx1 = x0 + w * 0.75;
+        const cy0 = y0 + h * 0.25;
+        const cy1 = y0 + h * 0.75;
+
+        for (let y = y0; y < y1; y += step) {
+          for (let x = x0; x < x1; x += step) {
+            const i = idx(x, y);
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            const yL = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+            const s = (max === 0) ? 0 : ((max - min) / max);
+
+            sumY += yL; sumY2 += yL * yL;
+            sumS += s; sumS2 += s * s;
+            if (yL < 0.22) dark++;
+            hist[clamp((yL * 16) | 0, 0, 15)]++;
+
+            // very simple vegetation proxy: "enough" green, decent saturation, mid brightness
+            const greenDominant = g > r * 1.05 && g > b * 1.05;
+            const brightEnough = yL > 0.18 && yL < 0.85;
+            const satEnough = s > 0.28;
+            if (greenDominant && brightEnough && satEnough) {
+              veg++;
+              const inCenter = x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1;
+              if (inCenter) {
+                vegCenter++;
+                centerCount++;
+              } else {
+                vegBorder++;
+                borderCount++;
+              }
+            } else {
+              const inCenter = x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1;
+              if (inCenter) centerCount++; else borderCount++;
+            }
+
+            if (x + step < x1) {
+              const j = idx(x + step, y);
+              const r2 = data[j], g2 = data[j + 1], b2 = data[j + 2];
+              const y2L = (0.2126 * r2 + 0.7152 * g2 + 0.0722 * b2) / 255;
+              if (Math.abs(y2L - yL) > 0.13) edges++;
+            }
+            if (y + step < y1) {
+              const j = idx(x, y + step);
+              const r2 = data[j], g2 = data[j + 1], b2 = data[j + 2];
+              const y2L = (0.2126 * r2 + 0.7152 * g2 + 0.0722 * b2) / 255;
+              if (Math.abs(y2L - yL) > 0.13) edges++;
+            }
+          }
+        }
+
+        const n = Math.ceil(w / step) * Math.ceil(h / step);
+        const meanY = sumY / n;
+        const varY = Math.max(0, sumY2 / n - meanY * meanY);
+        const meanS = sumS / n;
+        const varS = Math.max(0, sumS2 / n - meanS * meanS);
+        const edgeDensity = edges / (2 * n);
+
+        // entropy approx from 16-bin histogram
+        let ent = 0;
+        for (let i = 0; i < 16; i++) {
+          const p = hist[i] / n;
+          if (p > 1e-9) ent += -p * Math.log2(p);
+        }
+        const entropyApprox = clamp(ent / 4.0, 0, 1); // max ~4 for 16 bins
+
+        // shadow score: lots of dark pixels + some edges (collapsed roofs often give harsh shadows)
+        const shadowScore = clamp((dark / n) * (0.6 + 0.9 * edgeDensity), 0, 1);
+
+        // texture proxy: combine varY + entropy
+        const texture = clamp((Math.sqrt(varY) * 1.2 + entropyApprox * 0.8), 0, 1);
+
+        // color variability proxy: saturation variance
+        const colorVar = clamp(Math.sqrt(varS) * 1.6, 0, 1);
+
+        // vegetation fraction + concentration im Zentrum (eingewachsene Dächer)
+        const vegFrac = clamp(veg / n, 0, 1);
+        const centerFrac = centerCount ? vegCenter / centerCount : 0;
+        const borderFrac = borderCount ? vegBorder / borderCount : 0;
+        // stärkerer Fokus auf Vegetation, die wirklich im Dachbereich "sitzt"
+        const vegCenterContrast = clamp((centerFrac - borderFrac) * 1.6 + 0.15, 0, 1);
+
+        // geometry terms (from box)
+        const aspect = w >= h ? (w / h) : (h / w);
+        const areaNorm = clamp(area / (uploaded.width * uploaded.height), 0, 1);
+
+        // rectFill und irregularity werden später über Konturen gesetzt
+        return normalizeFeatures([
+          areaNorm,      // 0
+          0,             // 1 rectFill (placeholder)
+          aspect,        // 2
+          edgeDensity,   // 3
+          texture,       // 4
+          colorVar,      // 5
+          entropyApprox, // 6
+          0,             // 7 irregularity (placeholder)
+          shadowScore,   // 8
+          vegFrac,       // 9
+          vegCenterContrast, // 10
+        ]);
+      }
+
+      // ------------------------------
+      // Candidate generation using OpenCV contours
+      // ------------------------------
+      function ensureOverlayLayer() {
+        overlayGroup.clearLayers();
+        const bounds = map.getBounds();
+        const rect = L.rectangle(bounds, { color: "transparent", weight: 0, fillOpacity: 0 });
+        rect.addTo(overlayGroup);
+      }
+
+      function clearResultsUI() {
+        $("results").innerHTML = "";
+      }
+
+      function setOverlayCanvasSize(w, h) {
+        work.overlayCanvas.width = w;
+        work.overlayCanvas.height = h;
+      }
+
+      function drawOverlayBoxes(candidates) {
+        if (!analysis.overlayVisible) return;
+        const ctx = work.overlayCtx;
+        ctx.clearRect(0, 0, work.overlayCanvas.width, work.overlayCanvas.height);
+        ctx.lineWidth = Math.max(2, Math.round(Math.min(work.overlayCanvas.width, work.overlayCanvas.height) / 480));
+        ctx.font = `${Math.max(12, Math.round(work.overlayCanvas.width / 64))}px ui-monospace, monospace`;
+        ctx.textBaseline = "top";
+
+        for (const c of candidates) {
+          const prob = c.ml?.prob ?? 0.5;
+          const damage = c.damageScore ?? 0;
+          const comb = typeof c.combinedScore === "number" ? c.combinedScore : prob;
+          const cond = conditionShort(c.condition);
+          const col = prob >= 0.66 ? "rgba(52,211,153,0.95)" : prob <= 0.34 ? "rgba(251,113,133,0.95)" : "rgba(125,211,252,0.95)";
+          ctx.strokeStyle = col;
+          ctx.fillStyle = "rgba(0,0,0,0.28)";
+          ctx.strokeRect(c.box.x, c.box.y, c.box.w, c.box.h);
+          ctx.fillRect(c.box.x, c.box.y, c.box.w, 18);
+          ctx.fillStyle = "rgba(255,255,255,0.92)";
+          ctx.fillText(`#${c.id}  p=${prob.toFixed(2)}  s=${comb.toFixed(2)}  dmg=${damage.toFixed(2)} ${cond ? "[" + cond + "]" : ""}`, c.box.x + 4, c.box.y + 2);
+        }
+      }
+
+      function renderResults(candidates, imageData) {
+        clearResultsUI();
+        const frag = document.createDocumentFragment();
+
+        if (!candidates.length) {
+          const div = document.createElement("div");
+          div.className = "item";
+          div.innerHTML = `<div class="hint">Keine Kandidaten gefunden. Versuch: andere Schwellwerte / anderes Bild / höheren Kontrast.</div>`;
+          frag.appendChild(div);
+          $("results").appendChild(frag);
+          return;
+        }
+
+        for (const c of candidates) {
+          const div = document.createElement("div");
+          div.className = "item";
+          const prob = c.ml?.prob ?? 0.5;
+          const badgeClass = prob >= 0.66 ? "good" : prob <= 0.34 ? "bad" : "neutral";
+          const label = prob >= 0.66 ? "wahrscheinlich relevant" : prob <= 0.34 ? "wahrscheinlich irrelevant" : "unsicher";
+          const condLabel = c.condition ? `Zustand: ${c.condition}` : "";
+          const comb = typeof c.combinedScore === "number" ? c.combinedScore : prob;
+
+          div.innerHTML = `
+            <div class="itemTop">
+              <div class="mono">#${c.id} — Box ${Math.round(c.box.w)}×${Math.round(c.box.h)} px</div>
+              <div class="badge ${badgeClass}">${label} (p=${prob.toFixed(2)})</div>
+            </div>
+            <div class="row" style="gap:8px">
+              <button class="btnMini primary" data-act="yes" data-id="${c.id}">Ja (verfallen/auffällig)</button>
+              <button class="btnMini" data-act="no" data-id="${c.id}">Nein</button>
+              <button class="btnMini" data-act="zoom" data-id="${c.id}">Fokus</button>
+            </div>
+            <div class="small" style="margin-top:8px">
+              heur. Scores: roof=${(c.roofLikelihood ?? 0).toFixed(2)}, tgt=${c.damageScore.toFixed(2)}, overgrown=${(c.overgrownScore ?? 0).toFixed(2)}, rectFill=${c.rectFill.toFixed(2)}, irregular=${c.irregularity.toFixed(2)}, veg=${(c.features[9] ?? 0).toFixed(2)}, vegCenter=${(c.features[10] ?? 0).toFixed(2)}, s=${comb.toFixed(2)}<br/>
+              ${condLabel}
+            </div>
+          `;
+          frag.appendChild(div);
+        }
+        $("results").appendChild(frag);
+
+        $("results").onclick = (ev) => {
+          const btn = ev.target.closest("button[data-act]");
+          if (!btn) return;
+          const id = Number(btn.getAttribute("data-id"));
+          const act = btn.getAttribute("data-act");
+          const cand = analysis.candidates.find((x) => x.id === id);
+          if (!cand) return;
+
+          if (act === "zoom") {
+            if (analysis.source === "map" && analysis.lastRun?.meta?.mapView) {
+              const mv = analysis.lastRun.meta.mapView;
+              const cx = cand.box.x + cand.box.w / 2;
+              const cy = cand.box.y + cand.box.h / 2;
+              const globalPixel = L.point(
+                mv.pixelMin.x + cx,
+                mv.pixelMin.y + cy
+              );
+              const latlng = map.unproject(globalPixel, mv.z);
+              const targetZoom = Math.min(mv.z + 1, map.getMaxZoom?.() ?? 19);
+              map.setView(latlng, targetZoom);
+              toast("Fokus", `Kandidat #${id} in der Kartenansicht zentriert.`);
+            } else {
+              toast("Fokus", `Kandidat #${id} im Analysebild (Box x=${cand.box.x|0}, y=${cand.box.y|0}).`);
+            }
+            return;
+          }
+
+          if (act === "yes" || act === "no") {
+            const label = act === "yes" ? 1 : 0;
+            const sample = {
+              id: crypto.randomUUID?.() ?? String(Math.random()).slice(2),
+              label,
+              features: cand.features,
+              meta: { createdAt: nowIso(), source: "user-feedback", candidateId: cand.id }
+            };
+            training.samples.push(sample);
+            saveTraining(training);
+            toast("Gespeichert", `Feedback für #${id}: ${label ? "Ja" : "Nein"}.`);
+
+            // Re-score quickly
+            for (const c of analysis.candidates) {
+              c.ml = knnPredict(c.features);
+            }
+            analysis.candidates.sort(sortCandidates);
+            drawOverlayBoxes(analysis.candidates);
+            renderResults(analysis.candidates, imageData);
+          }
+        };
+      }
+
+      function sortCandidates(a, b) {
+        const mode = $("mode").value;
+        const sa = typeof a.combinedScore === "number" ? a.combinedScore : (a.ml?.prob ?? 0.5);
+        const sb = typeof b.combinedScore === "number" ? b.combinedScore : (b.ml?.prob ?? 0.5);
+        if (mode === "damage") {
+          // priorisiere kombinierten Ziel-Score (Zerstörung/Überwucherung), dann ML-Probability
+          if (b.damageScore !== a.damageScore) return b.damageScore - a.damageScore;
+          if (sb !== sa) return sb - sa;
+        } else if (mode === "building") {
+          // eher „gute“ Dächer: hohe Dach-Likelihood
+          if ((b.roofLikelihood ?? 0) !== (a.roofLikelihood ?? 0)) {
+            return (b.roofLikelihood ?? 0) - (a.roofLikelihood ?? 0);
+          }
+          if (sb !== sa) return sb - sa;
+        }
+        const pa = a.ml?.prob ?? 0.5;
+        const pb = b.ml?.prob ?? 0.5;
+        if (pb !== pa) return pb - pa;
+        return (b.box.w * b.box.h) - (a.box.w * a.box.h);
+      }
+
+      function getMinScoreThreshold() {
+        const el = $("minScore");
+        if (!el) return 0;
+        const v = parseFloat(el.value);
+        if (!Number.isFinite(v)) return 0;
+        return clamp(v, 0, 1);
+      }
+
+      function classifyCondition(metrics, features) {
+        const dmg = metrics.damageScore ?? 0;
+        const over = metrics.overgrownScore ?? 0;
+        const tgt = metrics.targetScore ?? 0;
+        const roof = metrics.roofLikelihood ?? 0;
+        const veg = features[9] ?? 0;
+        const vegCenterC = features[10] ?? 0;
+        const shadow = features[8] ?? 0;
+        const texture = features[4] ?? 0;
+
+        let label = "unbestimmt";
+        // reine Vegetation (Wald) ohne klares Dach
+        if (roof < 0.25 && veg >= 0.6 && vegCenterC < 0.3 && tgt < 0.4) {
+          label = "Vegetation (kein Dach)";
+        } else if (over >= 0.65 && veg >= 0.4 && roof >= 0.25) {
+          label = "eingewachsen";
+        } else if (dmg >= 0.65 && shadow >= 0.35 && texture >= 0.35) {
+          label = "stark beschädigt";
+        } else if (dmg >= 0.4 || over >= 0.4 || tgt >= 0.45) {
+          label = "alt / abgenutzt";
+        } else if (roof >= 0.55 && tgt < 0.35) {
+          label = "weitgehend intakt";
+        }
+        return label;
+      }
+
+      function conditionShort(label) {
+        if (!label) return "";
+        if (label.startsWith("eingew")) return "E";
+        if (label.startsWith("stark beschädigt")) return "Z";
+        if (label.startsWith("alt / abgenutzt")) return "A";
+        if (label.startsWith("weitgehend intakt")) return "I";
+        return "?";
+      }
+
+      function boxIoU(a, b) {
+        const ax1 = a.box.x;
+        const ay1 = a.box.y;
+        const ax2 = a.box.x + a.box.w;
+        const ay2 = a.box.y + a.box.h;
+        const bx1 = b.box.x;
+        const by1 = b.box.y;
+        const bx2 = b.box.x + b.box.w;
+        const by2 = b.box.y + b.box.h;
+
+        const ix1 = Math.max(ax1, bx1);
+        const iy1 = Math.max(ay1, by1);
+        const ix2 = Math.min(ax2, bx2);
+        const iy2 = Math.min(ay2, by2);
+        const iw = Math.max(0, ix2 - ix1);
+        const ih = Math.max(0, iy2 - iy1);
+        const inter = iw * ih;
+        if (inter <= 0) return 0;
+        const areaA = Math.max(0, ax2 - ax1) * Math.max(0, ay2 - ay1);
+        const areaB = Math.max(0, bx2 - bx1) * Math.max(0, by2 - by1);
+        const uni = areaA + areaB - inter;
+        return uni > 0 ? inter / uni : 0;
+      }
+
+      function nonMaxSuppress(sortedCandidates, iouThreshold = 0.4) {
+        const kept = [];
+        outer: for (const c of sortedCandidates) {
+          for (const k of kept) {
+            if (boxIoU(c, k) >= iouThreshold) continue outer;
+          }
+          kept.push(c);
+        }
+        return kept;
+      }
+
+      function computeRoofMetrics(features) {
+        // features: [areaNorm, rectFill, aspect, edgeDensity, texture, colorVar, entropyApprox, irregularity, shadowScore, vegFrac, vegCenterContrast]
+        const rectFill = features[1];
+        const aspect = features[2];
+        const edge = features[3];
+        const texture = features[4];
+        const entropy = features[6];
+        const irregular = features[7];
+        const shadow = features[8];
+        const veg = features[9] ?? 0;
+        const vegCenter = features[10] ?? 0;
+
+        // Dach-Likelihood: starke rechteckige Füllung + plausibles Seitenverhältnis + wenig chaotische Kontur
+        const geomAspect = 1 - clamp(Math.abs(aspect - 1.4) / 2.2, 0, 1);
+        const roofLikelihood = clamp(
+          0.52 * rectFill +
+          0.30 * geomAspect +
+          0.18 * (1 - irregular),
+          0,
+          1
+        );
+
+        // Basis-Schadensmaß: sehr texturiert, hohe Entropie, viele Kanten und Schatten, unregelmäßige Kontur, wenig rechteckige Füllung
+        const baseDamage = clamp(
+          0.28 * texture +
+          0.23 * entropy +
+          0.18 * edge +
+          0.17 * shadow +
+          0.09 * irregular +
+          0.05 * (1 - rectFill),
+          0,
+          1
+        );
+
+        // Verstärke Schaden nur dort, wo die Region dachähnlich ist
+        const damageScore = clamp(
+          baseDamage * (0.4 + 0.6 * roofLikelihood) +
+          0.06 * veg * 0.5 +
+          0.06 * vegCenter * 0.5,
+          0,
+          1
+        );
+
+        // Eingewachsenes Dach: viel Vegetation, besonders im Zentrum, wenig harte Schatten
+        const overgrownRaw = clamp(
+          0.58 * veg +
+          0.26 * vegCenter +
+          0.10 * texture -
+          0.10 * shadow,
+          0,
+          1
+        );
+        // Verstärke "eingewachsen" nur, wenn auch rechteckige Dachstruktur vorhanden ist
+        const overgrownScore = clamp(
+          overgrownRaw * (0.45 + 0.55 * rectFill),
+          0,
+          1
+        );
+
+        // Kombinierter Ziel-Score für „eingewachsen / zerstört“, zusätzlich durch Dach-Likelihood moduliert
+        let targetScore;
+        if (overgrownScore > damageScore) {
+          targetScore = 0.65 * overgrownScore + 0.35 * damageScore;
+        } else {
+          targetScore = 0.65 * damageScore + 0.35 * overgrownScore;
+        }
+        targetScore = clamp(
+          targetScore * (0.35 + 0.65 * roofLikelihood),
+          0,
+          1
+        );
+
+        return { roofLikelihood, damageScore, overgrownScore, targetScore };
+      }
+
+      async function analyzeFromCanvas(sourceCanvas, sourceLabel, extraMeta) {
+        if (!cvReady) {
+          toast("Noch nicht bereit", "OpenCV.js lädt noch. Warte kurz und versuche erneut.");
+          return;
+        }
+
+        const maxCandidates = clamp(Number($("maxCandidates").value || 30), 1, 200);
+        const thr1 = clamp(Number($("thrCanny").value || 60), 1, 255);
+        const thr2 = clamp(Number($("thrCanny2").value || 140), 1, 255);
+        const minArea = Math.max(10, Number($("minArea").value || 600));
+        const maxArea = Math.max(minArea + 1, Number($("maxArea").value || 65000));
+        const modeVal = $("mode").value;
+        const minScore = getMinScoreThreshold();
+
+        // draw source to working canvas
+        const w = sourceCanvas.width;
+        const h = sourceCanvas.height;
+        work.inputCanvas.width = w;
+        work.inputCanvas.height = h;
+        work.inputCtx.clearRect(0, 0, w, h);
+        work.inputCtx.drawImage(sourceCanvas, 0, 0);
+        const imageData = work.inputCtx.getImageData(0, 0, w, h);
+        setOverlayCanvasSize(w, h);
+
+        // OpenCV pipeline
+        let src = null, rgba = null, gray = null, blur = null, edges = null, kernel = null, morphed = null;
+        let contours = null, hierarchy = null;
+        try {
+          src = cv.imread(work.inputCanvas);
+          rgba = new cv.Mat();
+          cv.cvtColor(src, rgba, cv.COLOR_RGBA2RGB, 0);
+          gray = new cv.Mat();
+          cv.cvtColor(rgba, gray, cv.COLOR_RGB2GRAY, 0);
+          blur = new cv.Mat();
+          cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+          edges = new cv.Mat();
+          cv.Canny(blur, edges, thr1, thr2);
+
+          // Morphological close to connect edges
+          kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+          morphed = new cv.Mat();
+          cv.morphologyEx(edges, morphed, cv.MORPH_CLOSE, kernel);
+
+          contours = new cv.MatVector();
+          hierarchy = new cv.Mat();
+          cv.findContours(morphed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+          const candidates = [];
+          for (let i = 0; i < contours.size(); i++) {
+            const cnt = contours.get(i);
+            const rect = cv.boundingRect(cnt);
+            const area = rect.width * rect.height;
+            if (area < minArea || area > maxArea) continue;
+
+            // sehr langgezogene / winzige Strukturen (Straßen, schmale Kanten etc.) ausfiltern
+            const shortSide = Math.min(rect.width, rect.height);
+            const longSide = Math.max(rect.width, rect.height);
+            if (shortSide < 10) {
+              cnt.delete();
+              continue;
+            }
+            const rawAspect = longSide / Math.max(1, shortSide);
+            if (rawAspect > 8.0) {
+              cnt.delete();
+              continue;
+            }
+
+            // shape approx for rectangularity and irregularity
+            const peri = cv.arcLength(cnt, true);
+            const approx = new cv.Mat();
+            cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
+            const approxArea = cv.contourArea(approx);
+            const rectFill = clamp(approxArea / (area + 1e-6), 0, 1);
+            const irregularity = clamp((approx.rows - 4) / 12, 0, 1); // >4 vertices => more irregular
+
+            // features from pixels
+            const baseFeatures = extractFeaturesFromBox(imageData, { x: rect.x, y: rect.y, w: rect.width, h: rect.height });
+            baseFeatures[1] = rectFill;
+            baseFeatures[7] = irregularity;
+            const features = normalizeFeatures(baseFeatures);
+
+            const metrics = computeRoofMetrics(features);
+
+            // Heuristische Filter, um offensichtliche Nicht-Dächer früh zu verwerfen.
+            const edgeD = features[3] ?? 0;
+            const texture = features[4] ?? 0;
+            const entropy = features[6] ?? 0;
+            const vegFrac = features[9] ?? 0;
+            const vegCenterC = features[10] ?? 0;
+
+            // sehr waldartige Flächen ohne klare Dach-Geometrie entfernen:
+            // viel Vegetation, wenig Kontrast Zentrum/Rand, schwache Dach-Likelihood
+            const tooVegetated = vegFrac > 0.75 && vegCenterC < 0.25 && metrics.roofLikelihood < 0.40 && metrics.overgrownScore < 0.90;
+            // sehr homogene, kantenarme Flächen (Felder/Boden) aussortieren
+            const tooHomogeneousGround = texture < 0.10 && entropy < 0.14 && edgeD < 0.07 && metrics.roofLikelihood < 0.60;
+
+            // Nur dachartige Strukturen weiterverfolgen.
+            // Im Modus "damage" zusätzlich stärker auf eingewachsen/zerstört filtern,
+            // im Modus "building" etwas großzügiger, damit Dächer nicht komplett wegfallen.
+            const dmgOrOvergrown = Math.max(metrics.damageScore, metrics.overgrownScore);
+            const target = metrics.targetScore;
+            const rf = rectFill;
+            const irr = irregularity;
+            const aspect = features[2] ?? 1;
+            const aspectOk = aspect >= 0.5 && aspect <= 4.5;
+            const rectOk = rf >= 0.26;
+            const irrOk = irr <= 0.8;
+            let reject = false;
+            if (modeVal === "damage") {
+              reject =
+                metrics.roofLikelihood < 0.09 ||
+                (metrics.roofLikelihood < 0.20 && dmgOrOvergrown < 0.50) ||
+                target < 0.24;
+            } else {
+              // building: primär Dach-Form, sehr schwach eingewachsene/zerstörte Dächer bleiben trotzdem drin
+              reject = metrics.roofLikelihood < 0.24 || target < 0.14;
+            }
+            // sehr "un-dachige" Geometrien wegfiltern, aber leicht unregelmäßige Dächer zulassen
+            if (!aspectOk || !irrOk || (!rectOk && metrics.roofLikelihood < 0.65)) reject = true;
+            if (tooVegetated || tooHomogeneousGround) reject = true;
+            if (reject) {
+              approx.delete();
+              cnt.delete();
+              continue;
+            }
+
+            const ml = knnPredict(features);
+            const mlProb = ml.prob ?? 0.5;
+            let combinedScore;
+            if (modeVal === "damage") {
+              combinedScore = clamp(
+                0.45 * mlProb +
+                0.30 * metrics.targetScore +
+                0.15 * Math.max(metrics.damageScore, metrics.overgrownScore) +
+                0.10 * metrics.roofLikelihood,
+                0,
+                1
+              );
+            } else {
+              combinedScore = clamp(
+                0.35 * mlProb +
+                0.40 * metrics.roofLikelihood +
+                0.15 * (1 - metrics.overgrownScore) +
+                0.10 * (1 - metrics.damageScore),
+                0,
+                1
+              );
+            }
+            const condition = classifyCondition(metrics, features);
+            // reine Vegetation soll trotz guter Heuristik einen niedrigeren Gesamtscore erhalten,
+            // damit sie mit dem minScore-Slider leichter ausgefiltert werden kann.
+            if (condition === "Vegetation (kein Dach)") {
+              combinedScore *= 0.4;
+            }
+
+            candidates.push({
+              id: candidates.length + 1,
+              box: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
+              features,
+              rectFill,
+              irregularity,
+              ml,
+              combinedScore,
+              condition,
+              damageScore: metrics.targetScore,
+              roofLikelihood: metrics.roofLikelihood,
+              overgrownScore: metrics.overgrownScore,
+              rawDamageScore: metrics.damageScore,
+            });
+
+            approx.delete();
+            cnt.delete();
+          }
+
+          // Score-Schwelle anwenden (kombinierter KI-Score 0–1),
+          // dann Kandidaten nach Heuristik/ML sortieren und überlappende Boxen per NMS unterdrücken,
+          // um mehrere Boxen auf demselben Dach zu vermeiden.
+          const scored = candidates.filter((c) => {
+            const s = typeof c.combinedScore === "number" ? c.combinedScore : (c.ml?.prob ?? 0.5);
+            return s >= minScore;
+          });
+          const sorted = scored.sort(sortCandidates);
+          const nms = nonMaxSuppress(sorted, 0.4);
+          analysis.candidates = nms.slice(0, maxCandidates).map((c, idx) => ({ ...c, id: idx + 1 }));
+          analysis.lastRun = {
+            at: nowIso(),
+            thr1,
+            thr2,
+            minArea,
+            maxArea,
+            maxCandidates,
+            mode: $("mode").value,
+            source: sourceLabel,
+            meta: extraMeta || null,
+          };
+          analysis.source = sourceLabel;
+
+          // Render overlay on the image overlay canvas.
+          work.overlayCtx.clearRect(0, 0, work.overlayCanvas.width, work.overlayCanvas.height);
+          drawOverlayBoxes(analysis.candidates);
+          renderResults(analysis.candidates, imageData);
+
+          // Show overlay canvas in map as an image overlay (just as a viewer panel on map)
+          // We don't georeference it; we simply open a non-geographic overlay rectangle over current view for convenience.
+          overlayGroup.clearLayers();
+          const bounds = map.getBounds();
+          const dataUrl = mergeInputAndOverlayToDataURL();
+          L.imageOverlay(dataUrl, bounds, { opacity: 0.9, interactive: false }).addTo(overlayGroup);
+
+          toast("Analyse fertig", `${analysis.candidates.length} Kandidaten. Jetzt Ja/Nein klicken um zu lernen.`);
+        } catch (e) {
+          console.error(e);
+          toast("Fehler", "Analyse ist fehlgeschlagen. Versuch ein anderes Bild oder kleinere Größe.");
+        } finally {
+          src?.delete(); rgba?.delete(); gray?.delete(); blur?.delete(); edges?.delete(); kernel?.delete(); morphed?.delete();
+          contours?.delete(); hierarchy?.delete();
+        }
+      }
+
+      async function analyzeUploadedImage() {
+        if (!uploaded.imgEl) {
+          toast("Kein Bild", "Bitte zuerst ein Bild hochladen (JPG/PNG) oder nutze „Analyse aus Kartenansicht“.");
+          return;
+        }
+        // Convert uploaded <img> to a canvas source
+        const tmp = document.createElement("canvas");
+        tmp.width = uploaded.width;
+        tmp.height = uploaded.height;
+        const tctx = tmp.getContext("2d");
+        tctx.drawImage(uploaded.imgEl, 0, 0);
+        await analyzeFromCanvas(tmp, "upload");
+      }
+
+      function mergeInputAndOverlayToDataURL() {
+        const tmp = document.createElement("canvas");
+        tmp.width = work.inputCanvas.width;
+        tmp.height = work.inputCanvas.height;
+        const tctx = tmp.getContext("2d");
+        tctx.drawImage(work.inputCanvas, 0, 0);
+        if (analysis.overlayVisible) tctx.drawImage(work.overlayCanvas, 0, 0);
+        return tmp.toDataURL("image/png");
+      }
+
+      // ------------------------------
+      // File handling
+      // ------------------------------
+      function setImageFromFile(file) {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          uploaded.imgEl = img;
+          uploaded.width = img.naturalWidth || img.width;
+          uploaded.height = img.naturalHeight || img.height;
+          toast("Bild geladen", `${uploaded.width}×${uploaded.height}px. Starte Analyse.`);
+          URL.revokeObjectURL(url);
+        };
+        img.onerror = () => {
+          toast("Bild konnte nicht geladen werden", "Bitte ein gültiges JPG/PNG wählen.");
+          URL.revokeObjectURL(url);
+        };
+        img.src = url;
+      }
+
+      $("fileInput").addEventListener("change", (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setImageFromFile(file);
+      });
+
+      $("btnClearImage").addEventListener("click", () => {
+        uploaded = { imgEl: null, width: 0, height: 0 };
+        analysis.candidates = [];
+        analysis.lastRun = null;
+        analysis.source = "none";
+        clearResultsUI();
+        overlayGroup.clearLayers();
+        toast("Zurückgesetzt", "Upload-Bild entfernt.");
+        $("fileInput").value = "";
+      });
+
+      // ------------------------------
+      // Training export/import
+      // ------------------------------
+      function downloadJson(filename, obj) {
+        const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      $("btnExport").addEventListener("click", async () => {
+        const payload = {
+          ...training,
+          exportedAt: nowIso(),
+          note: "Satellite Analyzer training export (local, single-file app)",
+        };
+        downloadJson(`sat-analyzer-training-${new Date().toISOString().replace(/[:.]/g, "-")}.json`, payload);
+        toast("Export", "JSON wurde heruntergeladen.");
+      });
+
+      $("btnImport").addEventListener("click", () => $("importFile").click());
+
+      $("importFile").addEventListener("change", async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const txt = await file.text();
+          const obj = JSON.parse(txt);
+          if (!obj || typeof obj !== "object" || !Array.isArray(obj.samples)) throw new Error("bad format");
+          // Merge import
+          const before = training.samples.length;
+          const incoming = obj.samples
+            .filter((s) => s && (s.label === 0 || s.label === 1) && Array.isArray(s.features))
+            .map((s) => ({
+              id: s.id ?? (crypto.randomUUID?.() ?? String(Math.random()).slice(2)),
+              label: s.label,
+              features: normalizeFeatures(s.features),
+              meta: s.meta ?? { createdAt: nowIso(), source: "import" },
+            }));
+          training.samples.push(...incoming);
+          // cap to avoid unbounded growth
+          if (training.samples.length > 5000) training.samples = training.samples.slice(-5000);
+          saveTraining(training);
+          toast("Import", `Importiert: ${incoming.length}. Gesamt: ${training.samples.length} (vorher ${before}).`);
+        } catch {
+          toast("Import fehlgeschlagen", "Die JSON-Datei hat nicht das erwartete Format.");
+        } finally {
+          $("importFile").value = "";
+        }
+      });
+
+      $("btnWipe").addEventListener("click", () => {
+        training = structuredClone(DEFAULT_TRAINING);
+        saveTraining(training);
+        toast("Training gelöscht", "LocalStorage wurde zurückgesetzt.");
+      });
+
+      // ------------------------------
+      // UI actions
+      // ------------------------------
+      $("btnAnalyze").addEventListener("click", analyzeUploadedImage);
+
+      async function fetchImageToCanvas(url) {
+        const res = await fetch(url, { mode: "cors" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const bmp = await createImageBitmap(blob);
+        const c = document.createElement("canvas");
+        c.width = bmp.width;
+        c.height = bmp.height;
+        c.getContext("2d").drawImage(bmp, 0, 0);
+        return c;
+      }
+
+      function getTileRangeForMap(map, tileSize = 256) {
+        const z = map.getZoom();
+        const pixelBounds = map.getPixelBounds();
+        const min = pixelBounds.min.divideBy(tileSize).floor();
+        const max = pixelBounds.max.divideBy(tileSize).floor();
+        return { z, min, max, pixelBounds };
+      }
+
+      async function stitchCurrentMapViewToCanvas(tileLayer) {
+        const tileSize = 256;
+        const { z, min, max, pixelBounds } = getTileRangeForMap(map, tileSize);
+        const size = pixelBounds.getSize();
+
+        // safety cap: avoid huge downloads
+        const tilesX = (max.x - min.x + 1);
+          const tilesY = (max.y - min.y + 1);
+          const tileCount = tilesX * tilesY;
+          const maxTiles = 64; // ~8x8
+        if (tileCount > maxTiles) {
+          throw new Error(`Zu viele Tiles (${tileCount}). Zoome näher ran oder verkleinere das Fenster.`);
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = size.x;
+        canvas.height = size.y;
+        const ctx = canvas.getContext("2d");
+
+        let done = 0;
+        for (let ty = min.y; ty <= max.y; ty++) {
+          for (let tx = min.x; tx <= max.x; tx++) {
+            // Leaflet tileLayer expects coords object
+            const url = tileLayer.getTileUrl({ x: tx, y: ty, z });
+            let tileCanvas;
+            try {
+              tileCanvas = await fetchImageToCanvas(url);
+            } catch (e) {
+              throw new Error("Tile-Download/CORS blockiert. Nutze Upload (Screenshot) oder einen Tile-Server mit CORS-Headern.");
+            }
+
+            const dx = tx * tileSize - pixelBounds.min.x;
+            const dy = ty * tileSize - pixelBounds.min.y;
+            ctx.drawImage(tileCanvas, dx, dy);
+
+            done++;
+            if (done % 6 === 0) toast("Kartenansicht wird geladen…", `${done}/${tileCount} Tiles`, 1100);
+          }
+        }
+
+        return {
+          canvas,
+          meta: {
+            z,
+            pixelMin: { x: pixelBounds.min.x, y: pixelBounds.min.y },
+            size: { w: size.x, h: size.y },
+          },
+        };
+      }
+
+      async function analyzeMapView() {
+        if (!cvReady) {
+          toast("Noch nicht bereit", "OpenCV.js lädt noch. Warte kurz und versuche erneut.");
+          return;
+        }
+        toast("Starte Kartenanalyse", "Lade Tiles für die aktuelle Ansicht…", 2000);
+        try {
+          const { canvas: stitched, meta } = await stitchCurrentMapViewToCanvas(esri);
+          // Update uploaded size for feature normalization
+          uploaded.width = stitched.width;
+          uploaded.height = stitched.height;
+          await analyzeFromCanvas(stitched, "map", { mapView: meta });
+        } catch (e) {
+          toast("Kartenanalyse nicht möglich", String(e?.message ?? e));
+        }
+      }
+
+      $("btnAnalyzeMap").addEventListener("click", analyzeMapView);
+
+      $("btnToggleOverlay").addEventListener("click", () => {
+        analysis.overlayVisible = !analysis.overlayVisible;
+        if (analysis.candidates.length && work.inputCanvas.width > 0 && work.inputCanvas.height > 0) {
+          drawOverlayBoxes(analysis.candidates);
+          overlayGroup.clearLayers();
+          L.imageOverlay(mergeInputAndOverlayToDataURL(), map.getBounds(), { opacity: 0.9 }).addTo(overlayGroup);
+        }
+        toast("Overlay", analysis.overlayVisible ? "Overlay an." : "Overlay aus.");
+      });
+
+      $("btnResetView").addEventListener("click", () => {
+        map.setView([51.1657, 10.4515], 6);
+      });
+
+      // Keyboard shortcuts
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "a" || e.key === "A") analyzeUploadedImage();
+        if (e.key === "m" || e.key === "M") analyzeMapView();
+        if (e.key === "o" || e.key === "O") $("btnToggleOverlay").click();
+      });
+
+      // ------------------------------
+      // OpenCV.js readiness
+      // ------------------------------
+      function waitForCvReady() {
+        if (window.cv && window.cv.Mat) {
+          cvReady = true;
+          $("opencvStatus").textContent = "bereit";
+          toast("OpenCV.js bereit", "Du kannst jetzt ein Bild hochladen und analysieren.");
+          return;
+        }
+        $("opencvStatus").textContent = "Lade OpenCV.js… (bitte warten)";
+        window.setTimeout(waitForCvReady, 150);
+      }
+      waitForCvReady();
+
+      // ------------------------------
+      // Initial status
+      // ------------------------------
+      renderModelStatus();
+      ensureOverlayLayer();
+      toast("Start", "Shortcut: M=Analyse aus Kartenansicht, A=Analyse (Upload), O=Overlay.");
+    </script>
+  </body>
+</html>
+
