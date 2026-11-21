@@ -266,6 +266,10 @@
       .manualMapUtilityButton:focus-visible { outline:3px solid rgba(125,211,252,.72); outline-offset:2px; }
       .buildingOutlineStatus { max-width:190px; color:var(--muted2); font-size:10px; line-height:1.25; }
       .buildingOutlineStatus[hidden] { display:none; }
+      .buildingOutlineLoading { display:inline-flex; align-items:center; gap:5px; color:var(--accent); font-size:10px; line-height:1; white-space:nowrap; }
+      .buildingOutlineLoading[hidden] { display:none; }
+      .buildingOutlineSpinner { width:11px; height:11px; flex:0 0 11px; border:2px solid rgba(125,211,252,.25); border-top-color:var(--accent); border-radius:50%; animation:buildingOutlineSpin .7s linear infinite; }
+      @keyframes buildingOutlineSpin { to { transform:rotate(360deg); } }
       .analysisState { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; border:1px solid var(--border); border-radius:12px; background:rgba(255,255,255,0.04); }
       .stateMessage { display:flex; align-items:center; gap:10px; min-width:0; }
       .stateMessage strong { display:block; font-size:13px; }
@@ -296,9 +300,11 @@
       .resultsHeading { margin:0; font-size:12px; font-weight:650; }
       .resultsActions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
       .overlayToggle { display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:11px; cursor:pointer; user-select:none; }
-      .overlaySwitch { position:relative; display:inline-block; width:38px; height:22px; }
-      .overlaySwitch input { position:absolute; width:1px; height:1px; opacity:0; }
-      .switchTrack { position:absolute; inset:0; border:1px solid var(--border); border-radius:999px; background:rgba(255,255,255,0.16); transition:background .16s ease; }
+      .overlaySwitch { position:relative; display:inline-block; width:38px; height:22px; flex:0 0 38px; }
+      /* The real checkbox covers the complete switch, so mouse, touch and keyboard
+         all toggle the same control reliably (the track is purely visual). */
+      .overlaySwitch input { position:absolute; inset:0; z-index:2; display:block; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; }
+      .switchTrack { position:absolute; inset:0; pointer-events:none; border:1px solid var(--border); border-radius:999px; background:rgba(255,255,255,0.16); transition:background .16s ease; }
       .switchTrack::after { content:""; position:absolute; width:16px; height:16px; left:2px; top:2px; border-radius:50%; background:#fff; transition:transform .16s ease; }
       .overlaySwitch input:checked + .switchTrack { background:var(--accent); }
       .overlaySwitch input:checked + .switchTrack::after { transform:translateX(16px); }
@@ -328,12 +334,16 @@
         <div class="content">
           <div class="section">
             <h2>Analyseeinstellungen</h2>
+            <label class="small" style="display:block;margin-bottom:10px">Suchgebiet (km²)
+              <input id="analysisAreaKm2" type="number" min="1" step="0.1" value="1" inputmode="decimal" />
+              <span class="small">min 1 km².</span>
+            </label>
             <div class="twoCol">
               <label class="small">
                 Bewuchs-Mindestscore (0–100)
-                <input id="minProbabilityBuilding" type="number" min="0" max="100" step="1" value="5" inputmode="numeric" placeholder="0–100" />
+                <input id="minProbabilityBuilding" type="number" min="0" max="100" step="1" value="30" inputmode="numeric" placeholder="0–100" />
               </label>
-              <label class="small">Bewuchs-Mindestgrundfläche (m²)
+              <label class="small">Mindestgrundfläche (m²)
                 <input id="minAreaBuilding" type="number" min="1" step="1" value="45" />
               </label>
             </div>
@@ -353,6 +363,28 @@
                   <input id="hideSpecialStatuses" type="checkbox" style="margin-top:2px" />
                   <div>Abbrüche/Vollbewuchs ausblenden</div>
                 </label>
+                <div style="grid-column:1/-1;border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+                  <div class="small" style="font-weight:700;margin-bottom:8px">Selbstlernen</div>
+                  <label class="small" style="display:flex;flex-direction:row;align-items:flex-start;gap:8px;margin-bottom:8px">
+                    <input id="selfLearningEnabled" type="checkbox" style="margin-top:2px" checked />
+                    <span><strong>Selbstlernen aktivieren</strong><br />Rückmeldungen werden lokal als Lernbeispiele gespeichert.</span>
+                  </label>
+                  <label class="small" style="display:flex;flex-direction:row;align-items:flex-start;gap:8px">
+                    <input id="learningAnalysisEnabled" type="checkbox" style="margin-top:2px" checked />
+                    <span><strong>Einfluss auf die Analyse aktivieren</strong><br /></span>
+                  </label>
+                  <div id="learningSettingsStatus" class="small" role="status" style="margin-top:7px"></div>
+                  <details style="margin-top:10px">
+                    <summary class="small" style="cursor:pointer">Lernbeispiele ansehen und verwalten</summary>
+                    <div class="small" id="trainingDataSummary" role="status" style="margin:8px 0"></div>
+                    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:8px">
+                      <button id="exportTrainingData" type="button" class="btnMini">Lernbeispiele exportieren</button>
+                      <button id="resetTrainingData" type="button" class="btnMini danger">Alle Lernbeispiele zurücksetzen</button>
+                    </div>
+                    <div id="trainingDataList" class="small" style="display:grid;gap:6px;max-height:260px;overflow:auto"></div>
+                    <button id="trainingDataMore" type="button" class="btnMini" style="margin-top:7px" hidden>Weitere Lernbeispiele anzeigen</button>
+                  </details>
+                </div>
                 <label class="small" style="grid-column:1/-1">
                   Saisonerkennung
                   <select id="seasonMode">
@@ -422,10 +454,13 @@
             </div>
             <div class="actionLine">
               <button id="btnAnalyzeMap" class="primary" disabled>Detaillierte Analyse starten</button>
-              <span id="zoomWarning" class="zoomWarning" role="status">⚠ Der Ausschnitt überschreitet die lokale Analysegrenze. Zoome etwas hinein.</span>
+              <button id="btnCancelAnalysis" class="danger" type="button" hidden>Analyse abbrechen</button>
+              <span id="zoomWarning" class="zoomWarning" role="status">⚠ Zoome etwas hinein.</span>
             </div>
             <div id="footprintStatus" class="small footprintStatus">Gebäudeumrisse werden beim Suchlauf geladen.</div>
-            <div id="imageryStatus" class="small imageryStatus" role="status" aria-live="polite">Bildquelle: Esri World Imagery · Aufnahmealter noch nicht geprüft</div>
+            <div id="imageryStatus" class="small imageryStatus" role="status" aria-live="polite"></div>
+            <div id="imageryYearInfo" class="small" role="status" aria-live="polite" style="margin-top:4px;color:var(--muted2)"></div>
+            <div class="small" style="margin-top:3px;color:var(--muted2)"></div>
             <div id="validationStatus" class="small validationStatus" aria-live="polite"></div>
             <details id="analysisDiagnostics" class="analysisDiagnostics" hidden>
               <summary>Analyse-Diagnose</summary>
@@ -448,6 +483,9 @@
                     <span class="switchTrack" aria-hidden="true"></span>
                   </span>
                 </label>
+                <span id="buildingOutlineLoading" class="buildingOutlineLoading" role="status" aria-live="polite" hidden>
+                  <span class="buildingOutlineSpinner" aria-hidden="true"></span><span>Laden…</span>
+                </span>
                 <span id="buildingOutlineStatus" class="buildingOutlineStatus" role="status" aria-live="polite" hidden></span>
                 <button id="downloadSavedResults" class="btnMini" type="button" disabled>Download Results (0)</button>
                 <button id="clearSavedResults" class="iconButton" type="button" title="Alle gespeicherten Treffer löschen – mit Sicherheitsabfrage" aria-label="Alle gespeicherten Treffer löschen – mit Sicherheitsabfrage" disabled>
@@ -471,7 +509,7 @@
             </button>
           </form>
           <div id="placeSearchResults" class="placeSearchResults" role="listbox" aria-label="Suchergebnisse" hidden></div>
-          <div class="placeSearchAttribution">Ortsuche: Photon · © OpenStreetMap-Mitwirkende</div>
+          <div class="placeSearchAttribution"></div>
         </div>
         <div class="toast" id="toast" style="display:none">
           <div>
@@ -495,7 +533,8 @@
       const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
       function minimumScore() {
         const rawValue = $("minProbabilityBuilding")?.value;
-        return clamp(rawValue === "" || rawValue == null ? 50 : Number(rawValue), 0, 100) / 100;
+        const parsed = rawValue === "" || rawValue == null ? 5 : Number(rawValue);
+        return clamp(Number.isFinite(parsed) ? parsed : 5, 0, 100) / 100;
       }
       function minimumArea() {
         return Math.max(1, Number($("minAreaBuilding")?.value || 45));
@@ -535,8 +574,16 @@
           return [];
         }
       }
+      // Result state is initialized before the map. The download controls can therefore
+      // still work when the external Leaflet script is blocked or unavailable.
+      let analysisImage = { width: 0, height: 0 };
+      let analysis = { candidates: [], lastRun: null, source: "none", searching: false, error: null, cancelled: false, abortController: null };
+      let hitOverlayVisible = Boolean($("toggleHitOverlay")?.checked);
+      let selectedCandidateId = null;
+      let map = null;
       let savedHits = loadSavedHits();
-      function getDownloadResultRows(saved = savedHits, candidates = analysis.candidates) {
+
+      function getDownloadResultRows(saved = savedHits, candidates = null) {
         const rows = [], seen = new Set();
         const append = (latValue, lngValue) => {
           const lat = Number(latValue), lng = Number(lngValue);
@@ -545,28 +592,52 @@
           if (seen.has(key)) return;
           seen.add(key); rows.push({ lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) });
         };
+        // Download Results contains explicitly confirmed "Ja" hits plus intentionally
+        // added manual map points. Unconfirmed analysis candidates are not export rows.
+        const sourceCandidates = Array.isArray(candidates)
+          ? candidates.filter(candidate => candidate?.manualEntry)
+          : (analysis.candidates || []).filter(candidate => candidate?.manualEntry);
         for (const hit of saved || []) append(hit?.lat, hit?.lng);
-        for (const candidate of candidates || []) if (candidate?.manualEntry) append(candidate.lat, candidate.lng);
+        for (const candidate of sourceCandidates) {
+          const point = candidateCoordinates(candidate);
+          if (point) append(point.lat, point.lng);
+        }
         return rows;
       }
+
       function updateSavedHitsUI() {
         const button = $("downloadSavedResults");
+        const clearButton = $("clearSavedResults");
+        if (!button || !clearButton) return;
         const exportRows = getDownloadResultRows();
         button.textContent = "Download Results (" + exportRows.length + ")";
         button.disabled = exportRows.length === 0;
-        $("clearSavedResults").disabled = savedHits.length === 0;
+        clearButton.disabled = exportRows.length === 0;
+        clearButton.title = exportRows.length
+          ? "Alle " + exportRows.length + " Download-Ergebnisse löschen"
+          : "Keine Download-Ergebnisse zum Löschen vorhanden";
+        clearButton.setAttribute("aria-label", clearButton.title);
       }
       function candidateCoordinates(candidate) {
         if (candidate?.manualEntry && Number.isFinite(Number(candidate.lat)) && Number.isFinite(Number(candidate.lng)))
           return { lat: Number(candidate.lat), lng: Number(candidate.lng) };
+        if (!map) return null;
         const mv = analysis.lastRun?.meta?.mapView;
         if (!mv || !candidate?.box) return null;
+        // For a group, use the centroid of its largest real member footprint.
+        // The convex hull of the whole group may cover empty space between buildings.
+        const members = Array.isArray(candidate.members) ? candidate.members : [];
+        const representative = members.length
+          ? members.reduce((best, member) => Number(member.groundAreaM2 || 0) > Number(best?.groundAreaM2 || 0) ? member : best, null)
+          : null;
+        const sourcePolygon = Array.isArray(representative?.polygon) && representative.polygon.length >= 3
+          ? representative.polygon : candidate.polygon;
         let x = candidate.box.x + candidate.box.w / 2;
         let y = candidate.box.y + candidate.box.h / 2;
-        if (Array.isArray(candidate.polygon) && candidate.polygon.length >= 3) {
+        if (Array.isArray(sourcePolygon) && sourcePolygon.length >= 3) {
           let twiceArea = 0, centroidX = 0, centroidY = 0;
-          for (let i = 0; i < candidate.polygon.length; i++) {
-            const a = candidate.polygon[i], b = candidate.polygon[(i + 1) % candidate.polygon.length];
+          for (let i = 0; i < sourcePolygon.length; i++) {
+            const a = sourcePolygon[i], b = sourcePolygon[(i + 1) % sourcePolygon.length];
             const cross = a.x * b.y - b.x * a.y;
             twiceArea += cross;
             centroidX += (a.x + b.x) * cross;
@@ -576,41 +647,74 @@
             x = centroidX / (3 * twiceArea);
             y = centroidY / (3 * twiceArea);
           } else {
-            x = candidate.polygon.reduce((sum, point) => sum + point.x, 0) / candidate.polygon.length;
-            y = candidate.polygon.reduce((sum, point) => sum + point.y, 0) / candidate.polygon.length;
+            x = sourcePolygon.reduce((sum, point) => sum + point.x, 0) / sourcePolygon.length;
+            y = sourcePolygon.reduce((sum, point) => sum + point.y, 0) / sourcePolygon.length;
           }
         }
         const point = map.unproject(L.point(mv.pixelMin.x + x, mv.pixelMin.y + y), mv.z);
         return Number.isFinite(point.lat) && Number.isFinite(point.lng) ? { lat: point.lat, lng: point.lng } : null;
       }
       function saveConfirmedHit(candidate) {
-        if (!candidate || candidate.statusCandidate || !candidatePassesRunFilters(candidate, analysis.lastRun || {})) return "not-qualified";
-        const point = candidateCoordinates(candidate); if (!point) return "no-coordinate";
-        const lat = Number(point.lat.toFixed(6)), lng = Number(point.lng.toFixed(6)), key = lat.toFixed(6) + "," + lng.toFixed(6);
-        if (savedHits.some(hit => hit.lat.toFixed(6) + "," + hit.lng.toFixed(6) === key)) return "duplicate";
-        try { savedHits = [...savedHits, { lat, lng, createdAt: nowIso() }]; localStorage.setItem(SAVED_HITS_KEY, JSON.stringify(savedHits)); updateSavedHitsUI(); return "saved"; }
-        catch (error) { console.warn("Treffer konnte nicht dauerhaft gespeichert werden.", error); return "error"; }
+        if (!candidate || candidate.statusCandidate || !candidatePassesRunFilters(candidate, currentDisplayedRunFilters())) return "not-qualified";
+        let point = null;
+        try { point = candidateCoordinates(candidate); }
+        catch (error) { console.warn("Koordinate des bestätigten Treffers konnte nicht ermittelt werden.", error); }
+        if (!point || !Number.isFinite(Number(point.lat)) || !Number.isFinite(Number(point.lng))) return "no-coordinate";
+        const lat = Number(Number(point.lat).toFixed(6)), lng = Number(Number(point.lng).toFixed(6));
+        const key = lat.toFixed(6) + "," + lng.toFixed(6);
+        if (savedHits.some(hit => hit.lat.toFixed(6) + "," + hit.lng.toFixed(6) === key)) {
+          updateSavedHitsUI();
+          return "duplicate";
+        }
+        try {
+          savedHits = [...savedHits, { lat, lng, createdAt: nowIso() }];
+          localStorage.setItem(SAVED_HITS_KEY, JSON.stringify(savedHits));
+          updateSavedHitsUI();
+          return "saved";
+        } catch (error) {
+          // Roll back the in-memory change when browser storage rejects the write.
+          savedHits = savedHits.filter(hit => hit.lat.toFixed(6) + "," + hit.lng.toFixed(6) !== key);
+          console.warn("Treffer konnte nicht dauerhaft gespeichert werden.", error);
+          updateSavedHitsUI();
+          return "error";
+        }
       }
       function downloadSavedHits() {
         const exportRows = getDownloadResultRows();
-        if (!exportRows.length) return;
-        const contents = exportRows.map(hit => googleMapsSearchUrl(hit.lat, hit.lng)).join("\n") + "\n";
-        const blob = new Blob([contents], { type: "text/plain;charset=utf-8" });
-        const objectUrl = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = objectUrl;
-        link.download = "LostplaceFinder-Ergebnisse-" + new Date().toISOString().slice(0, 10) + ".txt";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        if (!exportRows.length) {
+          updateSavedHitsUI();
+          toast("Keine Download-Ergebnisse", "Führe zuerst eine Analyse aus oder füge einen Kartenpunkt hinzu.");
+          return;
+        }
+        try {
+          const contents = exportRows.map(hit => googleMapsSearchUrl(hit.lat, hit.lng)).join("\n") + "\n";
+          const blob = new Blob([contents], { type: "text/plain;charset=utf-8" });
+          const objectUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = objectUrl;
+          link.download = "LostplaceFinder-Ergebnisse-" + new Date().toISOString().slice(0, 10) + ".txt";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+          toast("Download vorbereitet", exportRows.length + " Ergebnisse wurden in eine TXT-Datei übernommen.");
+        } catch (error) {
+          console.warn("Download der Ergebnisse fehlgeschlagen.", error);
+          toast("Download fehlgeschlagen", "Der Browser konnte die TXT-Datei nicht erstellen.");
+        }
       }
+
       function clearSavedHits() {
-        // Sicherheitsabfrage verhindert versehentliches Löschen der gesamten gespeicherten Trefferliste.
-        if (!savedHits.length) return;
+        const manualCandidates = (analysis.candidates || []).filter(candidate => candidate?.manualEntry);
+        const exportRows = getDownloadResultRows(savedHits, manualCandidates);
+        if (!exportRows.length) {
+          updateSavedHitsUI();
+          toast("Keine Download-Ergebnisse", "Es gibt derzeit keine bestätigten Ja-Treffer oder manuell hinzugefügten Punkte zum Löschen.");
+          return;
+        }
         const confirmed = window.confirm(
-          "Möchtest du wirklich ALLE gespeicherten Treffer löschen?\n\n" +
-          savedHits.length + " gespeicherte Treffer werden dauerhaft aus diesem Browser entfernt.\n" +
+          "Möchtest du wirklich ALLE Download-Ergebnisse löschen?\n\n" +
+          exportRows.length + " bestätigte bzw. manuell hinzugefügte Einträge werden aus Download Results entfernt. Nicht bestätigte Analyseergebnisse bleiben in der Ergebnisliste erhalten.\n" +
           "Dieser Vorgang kann nicht rückgängig gemacht werden."
         );
         if (!confirmed) return;
@@ -618,13 +722,44 @@
         try {
           localStorage.removeItem(SAVED_HITS_KEY);
           savedHits = [];
+          analysis.candidates = (analysis.candidates || []).filter(candidate => !candidate?.manualEntry);
+          if (selectedCandidateId != null &&
+              !analysis.candidates.some(candidate => candidate.id === selectedCandidateId)) {
+            selectedCandidateId = null;
+          }
           updateSavedHitsUI();
-          toast("Trefferliste gelöscht", "Alle dauerhaft gespeicherten Ja-Treffer wurden entfernt.");
-        } catch (e) {
-          console.warn("Gespeicherte Trefferliste konnte nicht gelöscht werden.", e);
-          toast("Löschen fehlgeschlagen", "Der Browser hat den Zugriff auf den lokalen Speicher verweigert.");
+          renderResults();
+          if (map) updateMapOverlay();
+          toast("Download-Ergebnisse gelöscht", "Bestätigte Ja-Treffer und manuell hinzugefügte Punkte wurden aus Download Results entfernt. Die übrige Analyse bleibt erhalten.");
+        } catch (error) {
+          console.warn("Download-Ergebnisse konnten nicht vollständig gelöscht werden.", error);
+          toast("Löschen fehlgeschlagen", "Der Browser konnte die gespeicherten Ergebnisse nicht vollständig entfernen.");
+          updateSavedHitsUI();
         }
       }
+
+      // Bind these handlers before map initialization so they are not skipped if the
+      // external Leaflet dependency fails to load.
+      function bindDownloadResultControls() {
+        const downloadButton = $("downloadSavedResults");
+        const clearButton = $("clearSavedResults");
+        if (downloadButton && downloadButton.dataset.actionBound !== "true") {
+          downloadButton.addEventListener("click", event => {
+            event.preventDefault();
+            downloadSavedHits();
+          });
+          downloadButton.dataset.actionBound = "true";
+        }
+        if (clearButton && clearButton.dataset.actionBound !== "true") {
+          clearButton.addEventListener("click", event => {
+            event.preventDefault();
+            clearSavedHits();
+          });
+          clearButton.dataset.actionBound = "true";
+        }
+      }
+      bindDownloadResultControls();
+      updateSavedHitsUI();
 
       function toast(title, body, ms = 3200) {
         $("toastTitle").textContent = title;
@@ -637,13 +772,14 @@
       // ------------------------------
       // Map (display only)
       // ------------------------------
-      const map = L.map("map", { zoomControl: true }).setView([51.1657, 10.4515], 6);
+      // Extra display zoom up to level 22; Esri imagery itself is fetched natively up to level 19.
+      map = L.map("map", { zoomControl: true, maxZoom: 22 }).setView([51.1657, 10.4515], 6);
       const IMAGERY_PROVIDER_CONFIG = {
         esriWorldImagery: {
           id: "esriWorldImagery",
           name: "Esri World Imagery",
           tileUrlTemplate: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-          attribution: "Tiles © Esri — World Imagery (Anzeige)",
+          attribution: "",
           bands: ["RGB"],
           nativeGsdMeters: null,
           acquisitionDate: null,
@@ -652,14 +788,14 @@
       };
       const activeImageryProvider = IMAGERY_PROVIDER_CONFIG.esriWorldImagery;
       const esri = L.tileLayer(activeImageryProvider.tileUrlTemplate, {
-        maxZoom: 19, crossOrigin: "anonymous",
-        attribution: activeImageryProvider.attribution + " | Gebäude © OpenStreetMap-Mitwirkende",
+        maxZoom: 22, maxNativeZoom: 19, crossOrigin: "anonymous",
+        attribution: activeImageryProvider.attribution + "",
       });
       esri.addTo(map);
       const placeLabels = L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-        { minZoom: 2, maxZoom: 19, maxNativeZoom: 19, opacity: 0.72, zIndex: 250, crossOrigin: "anonymous",
-          attribution: "Ortsnamen und Grenzen © Esri, HERE, Garmin, © OpenStreetMap-Mitwirkende, GIS User Community" }
+        { minZoom: 2, maxZoom: 22, maxNativeZoom: 19, opacity: 0.72, zIndex: 250, crossOrigin: "anonymous",
+          attribution: "" }
       ).addTo(map);
       const analysisAreaGroup = L.layerGroup().addTo(map);
       const buildingOutlineGroup = L.layerGroup().addTo(map);
@@ -810,10 +946,6 @@
       // ------------------------------
       // Detailed map analysis pipeline
       // ------------------------------
-      let analysisImage = { width: 0, height: 0 };
-      let analysis = { candidates: [], lastRun: null, source: "none", searching: false, error: null };
-      let hitOverlayVisible = true;
-      let selectedCandidateId = null;
 
 
 
@@ -903,6 +1035,19 @@
       // but do not train from it because its method and vegetation subfeatures are unknowable.
       const trainingData = loadTrainingData();
       const feedbackSupportCache = new Map();
+      let learningPatternCache = new WeakMap();
+      const SELF_LEARNING_ENABLED_KEY = "lostplace_self_learning_enabled_v1";
+      const LEARNING_ANALYSIS_ENABLED_KEY = "lostplace_learning_analysis_enabled_v1";
+      function readLearningSetting(key, fallback = true) {
+        try {
+          const value = localStorage.getItem(key);
+          return value === null ? fallback : value === "true";
+        } catch { return fallback; }
+      }
+      let selfLearningEnabled = readLearningSetting(SELF_LEARNING_ENABLED_KEY, true);
+      let learningAnalysisEnabled = readLearningSetting(LEARNING_ANALYSIS_ENABLED_KEY, true);
+      // Applying learned patterns requires collecting feedback as well. Keep the two controls coherent.
+      if (learningAnalysisEnabled && !selfLearningEnabled) selfLearningEnabled = true;
 
       function trainingForMethod() {
         return trainingData.methods.building;
@@ -911,6 +1056,7 @@
       function saveTrainingData() {
         trainingData.updatedAt = nowIso();
         feedbackSupportCache.clear();
+        learningPatternCache = new WeakMap();
         try {
           localStorage.setItem(TRAINING_STORAGE_KEY, JSON.stringify(trainingData));
           return true;
@@ -918,6 +1064,67 @@
           console.warn("Methodenfeedback konnte nicht gespeichert werden.", error);
           return false;
         }
+      }
+
+      let trainingDataDisplayLimit = 120;
+      function trainingSampleLabel(sample) {
+        return sample?.label === 1 ? "Ja · bestätigtes Muster" : sample?.label === 0 ? "Nein · Gegenbeispiel" : "Unklar · nicht zum Training genutzt";
+      }
+      function renderTrainingDataManager() {
+        const data = trainingForMethod();
+        const records = [
+          ...data.samples.map(sample => ({ sample, kind: "sample" })),
+          ...data.uncertain.map(sample => ({ sample, kind: "uncertain" })),
+          ...(data.archive.building || []).map(entry => ({ sample: entry.sample || entry.review || entry, entry, kind: "archive-building" })),
+          ...(data.archive.damage || []).map(entry => ({ sample: entry.sample || entry.review || entry, entry, kind: "archive-damage" })),
+        ].sort((a,b) => String(b.sample?.meta?.createdAt || b.entry?.archivedAt || "").localeCompare(String(a.sample?.meta?.createdAt || a.entry?.archivedAt || "")));
+        const summary = $("trainingDataSummary"), list = $("trainingDataList"), more = $("trainingDataMore");
+        if (!summary || !list) return;
+        const yes = data.samples.filter(item => item.label === 1).length;
+        const no = data.samples.filter(item => item.label === 0).length;
+        const archived = (data.archive.building || []).length + (data.archive.damage || []).length;
+        summary.textContent = records.length + " gespeicherte Einträge · " + yes + " Ja · " + no + " Nein · " + data.uncertain.length + " unklar · " + archived + " archiviert. Gespeichert lokal in diesem Browser (" + TRAINING_STORAGE_KEY + ").";
+        list.replaceChildren();
+        if (!records.length) {
+          const empty = document.createElement("div"); empty.textContent = "Noch keine Lernbeispiele vorhanden."; list.appendChild(empty);
+          if (more) more.hidden = true;
+          return;
+        }
+        for (const record of records.slice(0, trainingDataDisplayLimit)) {
+          const sample = record.sample;
+          const row = document.createElement("div");
+          row.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px;border:1px solid var(--border);border-radius:8px";
+          const info = document.createElement("div"); info.style.minWidth = "0";
+          const title = document.createElement("strong"); title.textContent = (record.kind.startsWith("archive") ? "Archiviert · " : "") + trainingSampleLabel(sample);
+          const meta = document.createElement("div"); meta.style.cssText = "color:var(--muted2);overflow-wrap:anywhere";
+          const dateValue = sample?.meta?.createdAt || record.entry?.archivedAt;
+          const date = dateValue ? new Date(dateValue).toLocaleString("de-DE") : "Datum unbekannt";
+          const coords = Number.isFinite(Number(sample?.meta?.latitude)) && Number.isFinite(Number(sample?.meta?.longitude))
+            ? Number(sample.meta.latitude).toFixed(5) + ", " + Number(sample.meta.longitude).toFixed(5) : "ohne Koordinate";
+          meta.textContent = date + " · " + coords + (record.entry?.reason ? " · " + record.entry.reason : "") + (Number.isFinite(Number(sample?.meta?.baseScoreAtReview)) ? " · Ausgangsscore " + Math.round(Number(sample.meta.baseScoreAtReview) * 100) + "%" : "");
+          info.append(title, meta);
+          const remove = document.createElement("button"); remove.type = "button"; remove.className = "btnMini danger"; remove.textContent = "Löschen"; remove.setAttribute("aria-label", "Lernbeispiel löschen: " + trainingSampleLabel(sample));
+          remove.addEventListener("click", () => {
+            if (record.kind === "sample") data.samples = data.samples.filter(item => item !== sample);
+            else if (record.kind === "uncertain") data.uncertain = data.uncertain.filter(item => item !== sample);
+            else if (record.kind === "archive-building") data.archive.building = data.archive.building.filter(item => item !== record.entry);
+            else if (record.kind === "archive-damage") data.archive.damage = data.archive.damage.filter(item => item !== record.entry);
+            if (saveTrainingData()) { renderTrainingDataManager(); updateLearningSettingsStatus(); if (analysis.lastRun) { renderResults(); updateMapOverlay(); } }
+            else toast("Speichern fehlgeschlagen", "Das Lernbeispiel konnte im lokalen Speicher nicht gelöscht werden.");
+          });
+          row.append(info, remove); list.appendChild(row);
+        }
+        if (more) {
+          more.hidden = records.length <= trainingDataDisplayLimit;
+          more.textContent = "Weitere Lernbeispiele anzeigen (" + (records.length - trainingDataDisplayLimit) + " übrig)";
+        }
+      }
+      function exportTrainingData() {
+        const payload = { storageKey: TRAINING_STORAGE_KEY, exportedAt: nowIso(), data: trainingData };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a"); link.href = url; link.download = "lostplace_training_vegetation_v4.json";
+        document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
 
       function l2(a, b) {
@@ -1692,12 +1899,14 @@
             continue;
           }
           const vm = c.features?.vegetationMetrics || {}, iq = vm.imageQuality || {}, presence = c.buildingPresence || {}, image = c.imageryMetadata || {};
-          const score = candidateFilterScore(c), selected = c.id === selectedCandidateId;
+          // Keep the displayed score in scope for the badge styling below.
+          // This is the same unboosted score used by the minimum-score filter.
+          const score = baseCandidateScore(c), selected = c.id === selectedCandidateId;
           const row = document.createElement("article"); row.className = "item" + (selected ? " selected" : ""); row.dataset.candidateId = String(c.id);
           const stateLabels = { existing_building:"Gebäudestruktur erkennbar", suspected_demolition:"Verdacht: Gebäude im Bild nicht erkennbar", fully_overgrown_unverifiable:"Stark überwachsen · Zustand nicht verifizierbar", stale_footprint:"Umriss möglicherweise veraltet", geometry_mismatch:"Umriss-/Bildlage unklar", uncertain:"Gebäudestatus unklar" };
           const special = c.statusCandidate;
           const headline = special ? (stateLabels[presence.buildingState] || "Statusprüfung") : (c.vegetationTypeLabel || (c.greenCanopyQualified ? "Dichte begrünte Überwucherung" : "Dichte braune Überwucherung"));
-          const badge = special ? "Statusprüfung · keine bestätigte Diagnose" : headline + " · " + Math.round(Number(c.overgrowthScorePercent ?? score*100)) + " Score";
+          const badge = special ? "Statusprüfung · keine bestätigte Diagnose" : headline + " · " + Math.round(baseCandidateScore(c)*100) + " Score";
           const coordinate = candidateCoordinates(c), coordinateText = coordinate ? coordinate.lat.toFixed(6) + ", " + coordinate.lng.toFixed(6) : "Koordinate unbekannt";
           const tagText = c.osmTags?.building ? "building=" + c.osmTags.building : "Gebäudeart nicht getaggt";
           const qualityLabel = { high:"gut", medium:"mittel", low:"eingeschränkt", "not-assessable":"nicht ausreichend" }[iq.tier] || "unbekannt";
@@ -1748,7 +1957,7 @@
             return;
           }
           const label = action === "yes" ? 1 : action === "no" ? 0 : null;
-          if (label === 1 && !candidatePassesRunFilters(candidate, analysis.lastRun || {})) { toast("Treffer nicht qualifiziert", "Dieser Kandidat erfüllt die aktuellen Trefferfilter nicht."); return; }
+          if (label === 1 && !candidatePassesRunFilters(candidate, currentDisplayedRunFilters())) { toast("Treffer nicht qualifiziert", "Dieser Kandidat erfüllt die aktuell angezeigten Trefferfilter nicht."); return; }
           const selectedCategory = container.querySelector('[data-feedback-category="' + id + '"]')?.value || "";
           if (selectedCategory && ((label === 1 && ["planned_green_roof","context_only","no_vegetation"].includes(selectedCategory)) || (label === 0 && ["direct_roof_vegetation","green_canopy_overlap"].includes(selectedCategory)))) {
             toast("Kategorie passt nicht", "Bitte wähle eine Kategorie passend zur Rückmeldung."); return;
@@ -1762,17 +1971,44 @@
             resolutionZoom: vm.resolutionZoom ?? null, assessmentTier: candidate.assessmentTier || "low", imageQuality: iq,
             groundAreaM2: candidate.groundAreaM2, osmId: candidate.osmId, osmTags: candidate.osmTags,
             imageSource: activeImageryProvider.name, imageAcquisitionDate: image.acquisitionDate || null, imageNativeGsdMeters: image.nativeGsdMeters || null,
-            qualified: Boolean(candidate.overgrowthQualified),
+            qualified: Boolean(candidate.overgrowthQualified), baseScoreAtReview: baseCandidateScore(candidate),
           }};
-          const list = label === null ? trainingForMethod().uncertain : trainingForMethod().samples;
-          const prior = [...trainingForMethod().samples, ...trainingForMethod().uncertain].findIndex(item => item.meta?.locationKey === locationKey);
-          if (prior >= 0) { trainingForMethod().samples = trainingForMethod().samples.filter(item => item.meta?.locationKey !== locationKey); trainingForMethod().uncertain = trainingForMethod().uncertain.filter(item => item.meta?.locationKey !== locationKey); }
-          list.push(review); while (list.length > TRAINING_LIMIT) list.shift();
-          const feedbackSaved = saveTrainingData();
+          let feedbackSaved = null;
+          if (selfLearningEnabled) {
+            const training = trainingForMethod();
+            // Replace an older review for the same location before taking the target-array reference.
+            training.samples = training.samples.filter(item => item.meta?.locationKey !== locationKey);
+            training.uncertain = training.uncertain.filter(item => item.meta?.locationKey !== locationKey);
+            const list = label === null ? training.uncertain : training.samples;
+            list.push(review);
+            while (list.length > TRAINING_LIMIT) list.shift();
+            feedbackSaved = saveTrainingData();
+            if (feedbackSaved && typeof renderTrainingDataManager === "function") { renderTrainingDataManager(); updateLearningSettingsStatus(); }
+          }
           if (action === "no") analysis.candidates = analysis.candidates.filter(item => item.id !== id);
           renderResults(); updateMapOverlay();
-          if (!feedbackSaved) toast("Rückmeldung nicht gespeichert", action === "no" ? "Der Treffer wurde trotzdem aus der aktuellen Liste und Karte entfernt." : "Der lokale Browserspeicher hat das Speichern verhindert.");
-          else toast(label === null ? "Als nicht eindeutig gespeichert" : label ? "Bewuchstreffer gespeichert" : "Kein Bewuchs gespeichert", action === "no" ? "Der Treffer wurde aus der aktuellen Liste und Karte entfernt." : label === 1 && savedResult === "saved" ? "Feedback und bestätigter Treffer wurden lokal gespeichert." : "Das Feedback wird lokal im Browser gespeichert.");
+          if (action === "yes") {
+            const learningNote = !selfLearningEnabled
+              ? " Selbstlernen ist ausgeschaltet; das Trainingsfeedback wurde nicht gespeichert."
+              : feedbackSaved ? " Das Trainingsfeedback wurde ebenfalls gespeichert." : " Das Trainingsfeedback konnte nicht gespeichert werden.";
+            if (savedResult === "saved") {
+              toast("Zu Download Results hinzugefügt", "Der bestätigte Treffer wurde als neue Ergebniszeile gespeichert. Download Results enthält jetzt " + getDownloadResultRows().length + " Einträge." + learningNote);
+            } else if (savedResult === "duplicate") {
+              toast("Bereits in Download Results", "Diese Koordinate war bereits in der Downloadliste vorhanden." + learningNote);
+            } else if (savedResult === "no-coordinate") {
+              toast("Nicht zur Downloadliste hinzugefügt", "Für diesen Treffer konnte keine gültige Kartenkoordinate ermittelt werden. Prüfe, ob die Kartenansicht vollständig geladen ist." + learningNote);
+            } else if (savedResult === "not-qualified") {
+              toast("Treffer nicht qualifiziert", "Der Kandidat erfüllt die aktuell angezeigten Trefferfilter nicht." + learningNote);
+            } else {
+              toast("Download-Eintrag nicht gespeichert", "Der Browser konnte den bestätigten Treffer nicht dauerhaft speichern. Prüfe den lokalen Speicher des Browsers." + learningNote);
+            }
+          } else if (!selfLearningEnabled) {
+            toast("Rückmeldung übernommen", action === "no" ? "Der Treffer wurde aus der aktuellen Liste und Karte entfernt. Selbstlernen ist ausgeschaltet; es wurde kein Lernbeispiel gespeichert." : "Selbstlernen ist ausgeschaltet; diese Rückmeldung wurde nicht als Lernbeispiel gespeichert.");
+          } else if (!feedbackSaved) {
+            toast("Rückmeldung nicht gespeichert", action === "no" ? "Der Treffer wurde trotzdem aus der aktuellen Liste und Karte entfernt." : "Der lokale Browserspeicher hat das Speichern verhindert.");
+          } else {
+            toast(label === null ? "Als nicht eindeutig gespeichert" : "Kein Bewuchs gespeichert", action === "no" ? "Der Treffer wurde aus der aktuellen Liste und Karte entfernt." : "Das Feedback wird lokal im Browser gespeichert.");
+          }
         };
       }
 
@@ -1830,6 +2066,47 @@
       function baseCandidateScore(candidate) {
         return clamp(Number(candidate.overgrownBuildingScore) || 0, 0, 1);
       }
+      // Positive-feedback pattern learner: boosts only candidates that resemble confirmed "yes" examples.
+      // "No" examples act as counter-evidence, but never lower the original image-analysis score.
+      function feedbackPatternInfluence(candidate) {
+        if (!candidate || !selfLearningEnabled || !learningAnalysisEnabled || !candidate.overgrowthQualified || candidate.plannedGreenRoof) return 0;
+        if (learningPatternCache.has(candidate)) return learningPatternCache.get(candidate);
+        const vector = featureVectorForCandidate(candidate);
+        const compatible = trainingForMethod().samples.filter(sample =>
+          sample.meta?.algorithmVersion === VEGETATION_ALGORITHM_VERSION &&
+          sample.meta?.featureSchemaVersion === FEATURE_SCHEMA_VERSION &&
+          Array.isArray(sample.vector) && sample.vector.length === vector.length &&
+          (sample.label === 1 || sample.label === 0)
+        );
+        const positive = compatible.filter(sample => sample.label === 1);
+        const negative = compatible.filter(sample => sample.label === 0);
+        if (!positive.length) {
+          learningPatternCache.set(candidate, 0);
+          return 0;
+        }
+        const affinity = samples => {
+          if (!samples.length) return 0;
+          const nearest = nearestTrainingSamples(vector, samples, 5);
+          let weightedSimilarity = 0, totalWeight = 0;
+          for (const { distance } of nearest) {
+            const normalizedDistance = distance / Math.sqrt(Math.max(1, vector.length));
+            const weight = 1 / (0.08 + normalizedDistance);
+            const similarity = Math.exp(-normalizedDistance / 0.30);
+            weightedSimilarity += similarity * weight;
+            totalWeight += weight;
+          }
+          return totalWeight ? clamp(weightedSimilarity / totalWeight, 0, 1) : 0;
+        };
+        const positiveAffinity = affinity(positive);
+        const negativeAffinity = affinity(negative);
+        // Confidence grows with the number of independent positive examples, while one example
+        // can already contribute a small, deliberately limited preference.
+        const support = 0.30 + 0.70 * clamp((positive.length - 1) / 7, 0, 1);
+        const counterEvidence = 1 - 0.70 * negativeAffinity;
+        const boost = clamp(0.24 * support * positiveAffinity * counterEvidence, 0, 0.24);
+        learningPatternCache.set(candidate, boost);
+        return boost;
+      }
       function spatialValidationSummary() {
         const samples = trainingForMethod().samples.filter(sample =>
           sample.meta?.algorithmVersion === VEGETATION_ALGORITHM_VERSION &&
@@ -1879,9 +2156,9 @@
         const imageQuality = candidate.features?.vegetationMetrics?.imageQuality;
         if (!imageQuality || imageQualityRank(imageQuality.tier) < imageQualityRank(qualityMinimum)) return 0;
         const base = baseCandidateScore(candidate);
-        if (!candidate.overgrowthQualified || !hasBalancedFeedback() || !candidate.ml?.supported) return base;
-        const learnedWeight = 0.10 * clamp(Math.abs((candidate.ml.prob ?? 0.5) - 0.5) * 2, 0, 1);
-        return clamp(base * (1 - learnedWeight) + candidate.ml.prob * learnedWeight, 0, 1);
+        const learnedBoost = feedbackPatternInfluence(candidate);
+        // Keep the underlying RGB/geometry score intact; learned positive patterns can add at most 24%.
+        return clamp(base + (1 - base) * learnedBoost, 0, 1);
       }
       function candidatePassesRunFilters(candidate, runFilters = {}) {
         if (candidate?.manualEntry) return true;
@@ -1900,7 +2177,10 @@
         if (!Number.isFinite(area) || area < minArea || area > maxArea) return false;
         if (runFilters.onlyResidential && !candidate.residentialAssessment?.includedByFilter) return false;
         if (shouldHideSpecialStatus(candidate, runFilters)) return false;
-        if (normalHit && candidateFilterScore(candidate, qualityMinimum) < Number(runFilters.minProbability ?? minimumScore())) return false;
+        // The minimum score must match the unboosted score shown in the result list.
+        // Self-learning may affect sorting, but must never admit a below-threshold result.
+        const minScore = clamp(Number(runFilters.minProbability ?? minimumScore()), 0, 1);
+        if (baseCandidateScore(candidate) < minScore) return false;
         return true;
       }
       function sortCandidates(a, b) {
@@ -2223,7 +2503,8 @@
         } catch { /* Caching is optional; network fallback must still work. */ }
       }
 
-      async function fetchBuildingFootprints(mapView, { forceRefresh = false, quiet = false } = {}) {
+      async function fetchBuildingFootprints(mapView, { forceRefresh = false, quiet = false, signal = null } = {}) {
+        throwIfAnalysisAborted(signal);
         const b = mapView && mapView.bounds;
         if (!b) return { footprints: [], cached: false, stale: false, source: "" };
         if (b.east - b.west > 120 || b.west < -180 || b.east > 180 || b.south < -85 || b.north > 85)
@@ -2242,8 +2523,11 @@
         let last;
         for (let i = 0; i < endpoints.length; i++) {
           const endpoint = endpoints[i];
+          throwIfAnalysisAborted(signal);
           const ctl = new AbortController();
           const timer = setTimeout(() => ctl.abort(), 28000);
+          const relayAbort = () => ctl.abort();
+          if (signal) signal.addEventListener("abort", relayAbort, { once: true });
           if (!quiet) $("footprintStatus").textContent = "Gebäudeumrisse: Quelle " + (i + 1) + "/" + endpoints.length + "…";
           try {
             const response = await fetch(endpoint.url, {
@@ -2313,9 +2597,10 @@
             saveFootprintCache(key, result, footprintLimit, limitReached);
             return { footprints: result, cached: false, stale: false, source: endpoint.name, limit: footprintLimit, limitReached };
           } catch (e) {
+            if (signal?.aborted) throw new DOMException("Analyse wurde abgebrochen.", "AbortError");
             last = e;
             console.warn("Gebäudeumrisse: " + endpoint.name + " fehlgeschlagen", e);
-          } finally { clearTimeout(timer); }
+          } finally { clearTimeout(timer); signal?.removeEventListener("abort", relayAbort); }
         }
         if (cached) return { ...cached, stale: true, error: last };
         throw last || new Error("Keine Overpass-Quelle erreichbar");
@@ -2432,21 +2717,28 @@
       }
 
       function parseImageryDate(attributes = {}) {
+        const parseCompactDate = value => {
+          const year = Number(value.slice(0, 4)), month = Number(value.slice(4, 6)), day = Number(value.slice(6, 8));
+          const date = new Date(Date.UTC(year, month - 1, day));
+          // Date.UTC normalizes invalid dates (e.g. February 31); reject those explicitly.
+          if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+          return date;
+        };
         for (const raw of [attributes.SRC_DATE2, attributes.src_date2, attributes.SRC_DATE, attributes.src_date]) {
           if (raw == null || raw === "" || raw === 0) continue;
           if (typeof raw === "number" && Number.isFinite(raw)) {
             if (raw >= 10000000 && raw <= 99999999) {
-              const value = String(raw), d = new Date(Date.UTC(Number(value.slice(0,4)), Number(value.slice(4,6))-1, Number(value.slice(6,8))));
-              if (!Number.isNaN(d.getTime())) return d;
+              const date = parseCompactDate(String(Math.trunc(raw)));
+              if (date) return date;
               continue;
             }
-            const d = new Date(raw); if (!Number.isNaN(d.getTime())) return d;
+            const date = new Date(raw); if (!Number.isNaN(date.getTime())) return date;
             continue;
           }
           const text = String(raw).trim();
           if (/^\d{8}$/.test(text)) {
-            const d = new Date(Date.UTC(Number(text.slice(0,4)), Number(text.slice(4,6))-1, Number(text.slice(6,8))));
-            if (!Number.isNaN(d.getTime())) return d;
+            const date = parseCompactDate(text);
+            if (date) return date;
           } else {
             const parsed = new Date(text); if (!Number.isNaN(parsed.getTime())) return parsed;
           }
@@ -2471,7 +2763,8 @@
         return inside;
       }
       const imageryMetadataCache = new Map();
-      async function fetchEsriImageryMetadataForView(mapView) {
+      async function fetchEsriImageryMetadataForView(mapView, signal = null) {
+        throwIfAnalysisAborted(signal);
         const bounds = mapView?.bounds;
         if (!bounds) return { status: "unknown", source: "Esri World Imagery metadata /0", records: [], message: "Suchgebiet fehlt" };
         const key = [bounds.north,bounds.south,bounds.east,bounds.west].map(value => Number(value).toFixed(4)).join(",") + "/" + mapView.z;
@@ -2484,7 +2777,10 @@
           returnGeometry: "true", returnExceededLimitFeatures: "false", resultRecordCount: "500",
         });
         const controller = new AbortController(); const timer = window.setTimeout(() => controller.abort(), 12000);
+        const relayAbort = () => controller.abort();
+        if (signal) signal.addEventListener("abort", relayAbort, { once: true });
         try {
+          throwIfAnalysisAborted(signal);
           const response = await fetch("https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/0/query?" + params.toString(), { mode: "cors", signal: controller.signal });
           if (!response.ok) throw new Error("HTTP " + response.status);
           const data = await response.json();
@@ -2495,10 +2791,11 @@
           imageryMetadataCache.set(key, { at: Date.now(), value });
           return value;
         } catch (error) {
+          if (signal?.aborted) throw new DOMException("Analyse wurde abgebrochen.", "AbortError");
           const value = { status: "unknown", source: "Esri World Imagery metadata /0", records: [],
             message: error?.name === "AbortError" ? "Metadatenabfrage nach Zeitlimit abgebrochen" : "Metadaten nicht erreichbar: " + (error?.message || "Netzwerk-/CORS-Fehler") };
           return value;
-        } finally { window.clearTimeout(timer); }
+        } finally { window.clearTimeout(timer); signal?.removeEventListener("abort", relayAbort); }
       }
       function imageryMetadataForFootprint(footprint, metadata, zoom) {
         const ring = footprint?.latlngs || [];
@@ -2530,6 +2827,31 @@
         if (!metadata?.acquisitionDate) return "Aufnahmezeitpunkt unbekannt";
         const age = metadata.ageStatus === "within_four_years" ? "jünger als vier Jahre" : metadata.ageStatus === "older_than_four_years" ? "älter als vier Jahre" : "Alter unbekannt";
         return "Aufnahme " + metadata.acquisitionDate + " · " + age + (metadata.nativeGsdMeters ? " · SRC_RES " + metadata.nativeGsdMeters + " m" : " · native Auflösung unbekannt") + (metadata.sourceName ? " · Quelle " + metadata.sourceName : "");
+      }
+      function updateImageryYearInfo(metadata) {
+        const node = $("imageryYearInfo"); if (!node) return;
+        const years = [...new Set((metadata?.records || []).map(record => parseImageryDate(record.attributes || {})).filter(Boolean).map(date => date.getUTCFullYear()))].sort((a,b) => a-b);
+        node.textContent = years.length === 1 ? "Aufnahmejahr des Satellitenbildes: " + years[0]
+          : years.length > 1 ? "Aufnahmejahre im angezeigten Kartenausschnitt: " + years.join(", ")
+          : "Aufnahmejahr des Satellitenbildes: nicht verfügbar";
+      }
+      let imageryYearRefreshTimer = null;
+      async function refreshDisplayedImageryYear() {
+        if (analysis.searching) return;
+        const view = chooseAnalysisMapView();
+        if (!view) { $("imageryYearInfo").textContent = "Aufnahmejahr: erst bei analysefähigem Kartenausschnitt verfügbar"; return; }
+        const requestKey = [view.bounds.north,view.bounds.south,view.bounds.east,view.bounds.west].map(v => Number(v).toFixed(4)).join(",") + "/" + view.z;
+        $("imageryYearInfo").textContent = "Aufnahmejahr des Satellitenbildes wird ermittelt …";
+        try {
+          const metadata = await fetchEsriImageryMetadataForView(view);
+          const current = chooseAnalysisMapView();
+          const currentKey = current ? [current.bounds.north,current.bounds.south,current.bounds.east,current.bounds.west].map(v => Number(v).toFixed(4)).join(",") + "/" + current.z : "";
+          if (requestKey === currentKey && !analysis.searching) updateImageryYearInfo(metadata);
+        } catch { if (!analysis.searching) $("imageryYearInfo").textContent = "Aufnahmejahr des Satellitenbildes: nicht verfügbar"; }
+      }
+      function scheduleDisplayedImageryYearRefresh() {
+        window.clearTimeout(imageryYearRefreshTimer);
+        imageryYearRefreshTimer = window.setTimeout(refreshDisplayedImageryYear, 650);
       }
 
       // Seasonal profiles alter the actual pixel weighting, not only the UI labels.
@@ -2768,7 +3090,7 @@
           colorRanges.querySelectorAll('input[type="range"], input[type="text"], button').forEach(input => { input.disabled = !manualEnabled; });
         }
         if ($("seasonModeHint")) $("seasonModeHint").textContent = manualEnabled
-          ? "Manuell aktiv: Wähle unter „Vorlagen“ Begrünt oder Unbegrünt. Die vier Farbschieber übernehmen sofort die passenden Startwerte. Du kannst sie anpassen und als eigene benannte Vorlage speichern."
+          ? ""
           : "Automatische Saisonerkennung aktiv: Maßgeblich ist das Esri-Aufnahmedatum.";
         v10UpdateManualColorLabels();
       }
@@ -2820,11 +3142,33 @@
         return Math.max(Number(candidate.buildingPresence?.statusConfidence || 0), Number(candidate.buildingPresence?.buildingPresenceConfidence || 0), Number(candidate.buildingPresence?.demolitionConfidence || 0)) >= 0.56 &&
           imageQualityRank(quality?.tier) >= imageQualityRank("medium");
       }
-      function getVisibleCandidates() {
+      // Read result filters directly from the controls every time. This keeps the list,
+      // map overlay and actions in sync even after an analysis has already finished.
+      function currentDisplayedRunFilters() {
         const run = analysis.lastRun || {};
+        if (!analysis.lastRun) return run;
+        const minAreaM2 = minimumArea();
+        const maxAreaValue = $("maxArea")?.value;
+        const maxAreaM2 = maxAreaValue === "" || maxAreaValue == null
+          ? 100000
+          : Math.max(minAreaM2 + 1, Number(maxAreaValue) || 100000);
+        return {
+          ...run,
+          minProbability: minimumScore(),
+          minAreaM2,
+          maxAreaM2,
+          minimumQualityTier: minimumQuality(),
+          onlyResidential: Boolean($("onlyResidential")?.checked),
+          hideSpecialStatuses: Boolean($("hideSpecialStatuses")?.checked),
+          maxCandidates: clamp(Number($("maxCandidates")?.value || run.maxCandidates || 100), 1, 500),
+        };
+      }
+
+      function getVisibleCandidates() {
+        const run = currentDisplayedRunFilters();
         const visible = analysis.candidates.filter(candidate => candidatePassesRunFilters(candidate, run));
         visible.sort(sortCandidates);
-        const maximum = clamp(Number($("maxCandidates")?.value || run.maxCandidates || 100), 1, 500);
+        const maximum = clamp(Number(run.maxCandidates || 100), 1, 500);
         const detected = visible.filter(candidate => !candidate.manualEntry).slice(0, maximum);
         const manual = visible.filter(candidate => candidate.manualEntry);
         return [...detected, ...manual];
@@ -2851,8 +3195,18 @@
       }
       function v10SegmentsIntersect(a,b,c,d) {
         const cross=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x);
+        const onSegment=(p,q,r)=>q.x>=Math.min(p.x,r.x)-1e-9&&q.x<=Math.max(p.x,r.x)+1e-9&&
+          q.y>=Math.min(p.y,r.y)-1e-9&&q.y<=Math.max(p.y,r.y)+1e-9;
         const c1=cross(a,b,c), c2=cross(a,b,d), c3=cross(c,d,a), c4=cross(c,d,b);
-        return ((c1<=0&&c2>=0)||(c1>=0&&c2<=0))&&((c3<=0&&c4>=0)||(c3>=0&&c4<=0));
+        const eps=1e-9;
+        if (((c1>eps&&c2< -eps)||(c1< -eps&&c2>eps)) &&
+            ((c3>eps&&c4< -eps)||(c3< -eps&&c4>eps))) return true;
+        // Collinear segments intersect only when their bounding intervals overlap.
+        if (Math.abs(c1)<=eps&&onSegment(a,c,b)) return true;
+        if (Math.abs(c2)<=eps&&onSegment(a,d,b)) return true;
+        if (Math.abs(c3)<=eps&&onSegment(c,a,d)) return true;
+        if (Math.abs(c4)<=eps&&onSegment(c,b,d)) return true;
+        return false;
       }
       function v10PolygonsWithinGap(a,b,maxGapPx) {
         const ba=a.box||v10PolygonBounds(a.polygon), bb=b.box||v10PolygonBounds(b.polygon);
@@ -3122,7 +3476,8 @@
           clamp(metrics.sampleMeters/1.25,0,1),metrics.geometryConfidence];
       }
 
-      async function analyzeFromCanvas(sourceCanvas, mapView) {
+      async function analyzeFromCanvas(sourceCanvas, mapView, signal = null) {
+        throwIfAnalysisAborted(signal);
         const maxCandidates=clamp(Number($('maxCandidates').value||100),1,500);
         const analysisZoom=Number(mapView?.z??19);
         const latitudeCenter=Number(mapView?.bounds?(mapView.bounds.north+mapView.bounds.south)/2:map.getCenter().lat);
@@ -3132,18 +3487,21 @@
         const seasonSettings=v10SeasonSettingsFromUI();
         $('analysisDiagnostics').hidden=true;
         const imageData=sourceCanvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,sourceCanvas.width,sourceCanvas.height);
-        let footprints=[],footprintLimitReached=false,footprintQueryFailed=false;
+        let footprints=[],footprintLimitReached=false,footprintQueryFailed=false,footprintIndex=0;
         $('footprintStatus').textContent='OpenStreetMap lädt Gebäudeumrisse …';
         try{
-          const result=await fetchBuildingFootprints(mapView);footprints=result.footprints;footprintLimitReached=Boolean(result.limitReached);
+          const result=await fetchBuildingFootprints(mapView, { signal });throwIfAnalysisAborted(signal);footprints=result.footprints;footprintLimitReached=Boolean(result.limitReached);
           $('footprintStatus').textContent=footprints.length?footprints.length.toLocaleString('de-DE')+' Umrisse · '+(result.cached?result.stale?'letzter Cache':'Cache':result.source):'Keine Gebäudeumrisse im OSM-Ausschnitt';
-        }catch(error){footprintQueryFailed=true;console.warn('Gebäudeumrisse nicht verfügbar',error);$('footprintStatus').textContent='OSM momentan nicht erreichbar; ohne Gebäudeumrisse kann keine Gruppenanalyse erstellt werden.';}
-        $('imageryStatus').textContent='Esri World Imagery · Aufnahmealter und Quellenauflösung werden abgefragt …';
-        const imageryMetadata=await fetchEsriImageryMetadataForView(mapView);
+        }catch(error){if(signal?.aborted||error?.name==='AbortError')throw new DOMException("Analyse wurde abgebrochen.","AbortError");footprintQueryFailed=true;console.warn('Gebäudeumrisse nicht verfügbar',error);$('footprintStatus').textContent='OSM momentan nicht erreichbar; ohne Gebäudeumrisse kann keine Gruppenanalyse erstellt werden.';}
+        $('imageryStatus').textContent='Aufnahmealter und Quellenauflösung werden abgefragt …';
+        const imageryMetadata=await fetchEsriImageryMetadataForView(mapView, signal);throwIfAnalysisAborted(signal);
+        updateImageryYearInfo(imageryMetadata);
         const diagnostics=createAnalysisDiagnostics(footprints.length);diagnostics.footprintLimitReached=footprintLimitReached;diagnostics.brownCanopyDetected=0;diagnostics.notAssessable=0;
         diagnostics.areaBufferMeters=V10_REGION_BUFFER_METERS;diagnostics.connectedGroupJoinMeters=V10_GROUP_JOIN_METERS;
         const valid=[];
         for(const footprint of footprints){
+          if ((footprintIndex++ % 16) === 0) await new Promise(resolve => requestAnimationFrame(resolve));
+          throwIfAnalysisAborted(signal);
           const originalPolygon=mapFootprintToPixels(footprint,mapView);
           if(originalPolygon.length<4){recordAnalysisRejection(diagnostics,footprint.osmType+'/'+footprint.osmId,'osm',['invalid_footprint_geometry']);continue;}
           const sourceLatitude=footprint.latlngs.reduce((sum,point)=>sum+point[0],0)/footprint.latlngs.length;
@@ -3169,9 +3527,12 @@
         const eligibleGroups=groups.filter(group=>group.groundAreaM2>=minAreaM2&&group.groundAreaM2<=maxAreaM2);
         diagnostics.areaFiltered+=groups.length-eligibleGroups.length;
         $('analysisStateDetail').textContent='Einmalige Detailkacheln für '+eligibleGroups.length+' Gebäudegruppen werden geladen …';
-        const highResolutionTileSet=eligibleGroups.length?await loadHighResolutionFootprintTiles(eligibleGroups,activeImageryProvider):{tiles:new Map(),loaded:0,limited:false,requested:0,total:0};
+        const highResolutionTileSet=eligibleGroups.length?await loadHighResolutionFootprintTiles(eligibleGroups,activeImageryProvider,signal):{tiles:new Map(),loaded:0,limited:false,requested:0,total:0};
+        throwIfAnalysisAborted(signal);
         const candidates=[];let groupIndex=0;
         for(const group of eligibleGroups){
+          await new Promise(resolve => requestAnimationFrame(resolve));
+          throwIfAnalysisAborted(signal);
           groupIndex++;
           $('analysisStateDetail').textContent='Flächenanalyse '+groupIndex+'/'+eligibleGroups.length+' · '+group.members.length+' zusammenhängende Gebäude · 5-m-Umring';
           const seasonProfile=v10ResolveGroupSeason(group,seasonSettings);
@@ -3180,7 +3541,7 @@
           const quality={score:areaMetrics.qualityScore,tier:areaMetrics.qualityTier,alphaCoverage:areaMetrics.coverageFraction,
             sampleCount:areaMetrics.validSampleCount,apparentDetail:areaMetrics.structureRichness,tonalRange:areaMetrics.coverageFraction,
             overexposureFraction:0,underexposureFraction:areaMetrics.shadowFraction};
-          const vegetationQualified=areaMetrics.assessable&&areaMetrics.enoughInteriorSupport&&areaMetrics.score>=25&&areaMetrics.coverageFraction>=.92;
+          const vegetationQualified=areaMetrics.assessable&&areaMetrics.enoughInteriorSupport&&areaMetrics.coverageFraction>=.92;
           const vegetationType=areaMetrics.vegetationType;
           const vegetationMetrics={cover:areaMetrics.vegetationColorShare,centerCover:areaMetrics.insideVegetationShare,
             strongCover:areaMetrics.structuredShare,centerStrongCover:areaMetrics.insideStructuredShare,
@@ -3194,7 +3555,11 @@
           const features=[0,.5,1,0,areaMetrics.structureRichness,0,areaMetrics.orientationEntropy,0,0,areaMetrics.vegetationColorShare,0];
           features.vegetationMetrics=vegetationMetrics;
           const groupTags=group.tags||{};
-          const greenRoofTags=[groupTags['roof:greenery'],groupTags.green_roof,groupTags['roof:material']].map(v=>String(v||'').toLowerCase());
+          // Roof tags may be present on any member of a grouped OSM footprint.
+          const greenRoofTags=group.members.flatMap(member => {
+            const tags=member.footprint?.tags||{};
+            return [tags['roof:greenery'],tags.green_roof,tags['roof:material']];
+          }).map(v=>String(v||'').toLowerCase());
           const plannedGreenRoof=greenRoofTags.some(v=>['yes','grass','vegetation','green_roof','sedum','extensive','intensive'].includes(v));
           const qualified=vegetationQualified&&!plannedGreenRoof;
           const score=areaMetrics.score/100;
@@ -3229,7 +3594,6 @@
           if(!qualified)recordAnalysisRejection(diagnostics,'group-'+groupIndex,'group',[
             !areaMetrics.assessable?'insufficient_region_quality':null,
             !areaMetrics.enoughInteriorSupport?'insufficient_vegetation_in_footprint_or_region':null,
-            areaMetrics.score<25?'region_score_below_candidate_floor':null,
             plannedGreenRoof?'explicit_planned_green_roof':null].filter(Boolean),
             {score:areaMetrics.score,greenShare:areaMetrics.greenShare,brownShare:areaMetrics.brownShare,structuredShare:areaMetrics.structuredShare,shadowFraction:areaMetrics.shadowFraction});
         }
@@ -3268,7 +3632,12 @@
         const view = analysis.lastRun?.meta?.mapView;
         if (!view || !Array.isArray(candidate.polygon) || candidate.polygon.length < 3) return false;
         const point = map.project(latlng, view.z);
-        return pointInPolygonWithDistance(point.x - view.pixelMin.x, point.y - view.pixelMin.y, candidate.polygon).inside;
+        const localPoint = { x: point.x - view.pixelMin.x, y: point.y - view.pixelMin.y };
+        const memberPolygons = Array.isArray(candidate.memberPolygons) ? candidate.memberPolygons : [];
+        if (memberPolygons.length) return memberPolygons.some(polygon =>
+          Array.isArray(polygon) && polygon.length >= 3 && pointInPolygonWithDistance(localPoint.x, localPoint.y, polygon).inside
+        );
+        return pointInPolygonWithDistance(localPoint.x, localPoint.y, candidate.polygon).inside;
       }
       function addManualMapHit(latlng) {
         const lat = Number(latlng?.lat), lng = Number(latlng?.lng);
@@ -3361,9 +3730,34 @@
       }
       map.on("click", offerManualHitPopup);
 
+      function setHitOverlayVisible(visible) {
+        hitOverlayVisible = Boolean(visible);
+        const control = $("toggleHitOverlay");
+        if (control && control.checked !== hitOverlayVisible) control.checked = hitOverlayVisible;
+
+        if (!hitOverlayVisible) {
+          // Clear and detach the complete result layer. This guarantees that no old
+          // marker or polygon remains visible after switching the overlay off.
+          overlayGroup.clearLayers();
+          if (map.hasLayer(overlayGroup)) map.removeLayer(overlayGroup);
+          return;
+        }
+
+        // Rebuild from the current filtered candidate set every time the overlay is
+        // enabled; do not rely on previously cached Leaflet layer contents.
+        updateMapOverlay();
+      }
       function updateMapOverlay() {
-        overlayGroup.clearLayers(); updateAnalysisAreaOverlay();
-        if (!hitOverlayVisible || analysis.source !== "map") return;
+        updateAnalysisAreaOverlay();
+        const hasMapResults = analysis.source === "map" || analysis.lastRun?.source === "map";
+        if (!hitOverlayVisible || !hasMapResults) {
+          overlayGroup.clearLayers();
+          if (map.hasLayer(overlayGroup)) map.removeLayer(overlayGroup);
+          return;
+        }
+
+        if (!map.hasLayer(overlayGroup)) overlayGroup.addTo(map);
+        overlayGroup.clearLayers();
         const view = analysis.lastRun?.meta?.mapView;
         for (const candidate of getVisibleCandidates()) {
           const isSelected = candidate.id === selectedCandidateId;
@@ -3377,7 +3771,7 @@
           }
           if (!view || !Array.isArray(candidate.polygon) || candidate.polygon.length < 3) continue;
           const geometryPolygons = Array.isArray(candidate.memberPolygons) && candidate.memberPolygons.length ? candidate.memberPolygons : [candidate.polygon];
-          const score = candidateFilterScore(candidate), special = candidate.statusCandidate;
+          const special = candidate.statusCandidate;
           const color = special ? (candidate.buildingPresence?.buildingState === "suspected_demolition" ? "#fb7185" : "#fbbf24")
             : candidate.vegetationType === "unbegrünt" ? "#b77945" : "#84cc16";
           for (const memberPolygon of geometryPolygons) {
@@ -3387,34 +3781,42 @@
               dashArray: special ? "7 4" : null, fill: true, fillColor: color, fillOpacity: 0.09, interactive: true, bubblingMouseEvents: false }).addTo(overlayGroup);
             shape.on("click", () => selectCandidateInList(candidate.id));
           }
-          const center = map.unproject(L.point(view.pixelMin.x + candidate.box.x + candidate.box.w / 2, view.pixelMin.y + candidate.box.y + candidate.box.h / 2), view.z);
-          const label = special ? "Status #" + candidate.id : "#" + candidate.id + " · " + Math.round(Number(candidate.overgrowthScorePercent ?? score*100));
+          const representativePoint = candidateCoordinates(candidate);
+          const center = representativePoint ? L.latLng(representativePoint.lat, representativePoint.lng)
+            : map.unproject(L.point(view.pixelMin.x + candidate.box.x + candidate.box.w / 2, view.pixelMin.y + candidate.box.h / 2), view.z);
+          const label = special ? "Status #" + candidate.id : "#" + candidate.id + " · " + Math.round(baseCandidateScore(candidate)*100);
           const icon = L.divIcon({ className: "", html: '<span class="hitMarker" style="border-color:' + color + '">' + escapeHtml(label) + '</span>', iconSize: [76, 22], iconAnchor: [38, 11] });
           const marker = L.marker(center, { icon, keyboard: false }).addTo(overlayGroup);
           marker.on("click", () => selectCandidateInList(candidate.id));
-          marker.bindTooltip(escapeHtml(special ? "Statusprüfung · " + candidate.buildingPresence.note : (candidate.vegetationTypeLabel || "Überwucherung") + " · Flächenscore " + Math.round(Number(candidate.overgrowthScorePercent ?? score*100)) + " · " + candidate.memberCount + " Gebäude · " + V10_REGION_BUFFER_METERS + " m Umring"));
+          marker.bindTooltip(escapeHtml(special ? "Statusprüfung · " + candidate.buildingPresence.note : (candidate.vegetationTypeLabel || "Überwucherung") + " · Flächenscore " + Math.round(baseCandidateScore(candidate)*100) + " · " + candidate.memberCount + " Gebäude · " + V10_REGION_BUFFER_METERS + " m Umring"));
         }
       }
       let buildingOutlineRefreshTimer = null, buildingOutlineRequestId = 0;
+      let buildingOutlinesVisible = Boolean($("toggleBuildingOutlines")?.checked);
       function currentVisibleBuildingMapView() {
         const bounds = map.getBounds();
         return { z: map.getZoom(), areaSideMeters: 0, bounds: {
           north: bounds.getNorth(), south: bounds.getSouth(), east: bounds.getEast(), west: bounds.getWest(),
         } };
       }
+      function setBuildingOutlineLoading(loading) {
+        const indicator = $('buildingOutlineLoading');
+        if (indicator) indicator.hidden = !loading;
+      }
       function scheduleBuildingOutlineRefresh(delay = 350) {
         if (!$('toggleBuildingOutlines').checked) return;
         const requestId = ++buildingOutlineRequestId;
         if (buildingOutlineRefreshTimer) clearTimeout(buildingOutlineRefreshTimer);
         buildingOutlineGroup.clearLayers();
-        const status = $('buildingOutlineStatus'); status.hidden = false; status.textContent = 'Gebäudeumrisse für den sichtbaren Ausschnitt werden geladen …';
+        setBuildingOutlineLoading(true);
+        const status = $('buildingOutlineStatus'); status.hidden = true; status.textContent = '';
         buildingOutlineRefreshTimer = setTimeout(() => refreshVisibleBuildingOutlines(requestId), delay);
       }
       async function refreshVisibleBuildingOutlines(requestId) {
         if (requestId !== buildingOutlineRequestId || !$('toggleBuildingOutlines').checked) return;
         const status = $('buildingOutlineStatus'), view = currentVisibleBuildingMapView();
         try {
-          const result = await fetchBuildingFootprints(view, { forceRefresh: true, quiet: true });
+          const result = await fetchBuildingFootprints(view, { forceRefresh: false, quiet: true });
           if (requestId !== buildingOutlineRequestId || !$('toggleBuildingOutlines').checked) return;
           buildingOutlineGroup.clearLayers();
           const style = { color: '#38bdf8', weight: 1.5, opacity: 0.92, fill: false, interactive: false, bubblingMouseEvents: false };
@@ -3426,19 +3828,28 @@
           const count = (result.footprints || []).length;
           const limitNote = result.limitReached ? ' · Abfragelimit erreicht' : '';
           const sourceNote = result.cached ? (result.stale ? ' · letzter Cache' : ' · Cache') : result.source ? ' · ' + result.source : '';
+          setBuildingOutlineLoading(false);
+          status.hidden = false;
           status.textContent = result.source && !count ? result.source : count.toLocaleString('de-DE') + ' Gebäudeumrisse im sichtbaren Ausschnitt' + limitNote + sourceNote;
         } catch (error) {
           if (requestId !== buildingOutlineRequestId || !$('toggleBuildingOutlines').checked) return;
           buildingOutlineGroup.clearLayers();
+          setBuildingOutlineLoading(false);
+          status.hidden = false;
           status.textContent = 'Gebäudeumrisse konnten nicht geladen werden: ' + String(error?.message || error);
         }
       }
       function setBuildingOutlinesVisible(visible) {
+        buildingOutlinesVisible = Boolean(visible);
+        const control = $("toggleBuildingOutlines");
+        if (control && control.checked !== buildingOutlinesVisible) control.checked = buildingOutlinesVisible;
         if (buildingOutlineRefreshTimer) clearTimeout(buildingOutlineRefreshTimer);
+        buildingOutlineRefreshTimer = null;
         buildingOutlineRequestId++;
         if (visible) scheduleBuildingOutlineRefresh(0);
         else {
           buildingOutlineGroup.clearLayers();
+          setBuildingOutlineLoading(false);
           const status = $('buildingOutlineStatus'); status.hidden = true; status.textContent = '';
         }
       }
@@ -3448,14 +3859,21 @@
       // ------------------------------
 
       const tileBlobCache = new Map();
-      async function fetchImageToCanvas(url) {
+      function throwIfAnalysisAborted(signal) {
+        if (signal?.aborted) throw new DOMException("Analyse wurde abgebrochen.", "AbortError");
+      }
+      async function fetchImageToCanvas(url, externalSignal = null) {
+        throwIfAnalysisAborted(externalSignal);
         let blob = tileBlobCache.get(url);
         if (!blob) {
           let lastError;
           for (let attempt = 0; attempt < 3 && !blob; attempt++) {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 12000);
+            const relayAbort = () => controller.abort();
+            if (externalSignal) externalSignal.addEventListener("abort", relayAbort, { once: true });
             try {
+              throwIfAnalysisAborted(externalSignal);
               const response = await fetch(url, { mode: "cors", signal: controller.signal });
               if (!response.ok) {
                 const error = new Error("HTTP " + response.status);
@@ -3466,14 +3884,16 @@
               if (!blob.size) throw new Error("Leere Bildkachel");
             } catch (error) {
               lastError = error;
+              if (externalSignal?.aborted) throw new DOMException("Analyse wurde abgebrochen.", "AbortError");
               if (error.retryable === false) break;
               if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)));
-            } finally { clearTimeout(timer); }
+            } finally { clearTimeout(timer); externalSignal?.removeEventListener("abort", relayAbort); }
           }
           if (!blob) throw lastError || new Error("Bildkachel konnte nicht geladen werden");
           tileBlobCache.set(url, blob);
           while (tileBlobCache.size > 48) tileBlobCache.delete(tileBlobCache.keys().next().value);
         }
+        throwIfAnalysisAborted(externalSignal);
         const bmp = await createImageBitmap(blob);
         const c = document.createElement("canvas");
         c.width = bmp.width;
@@ -3539,7 +3959,7 @@
         Math.ceil(40 / Math.max(0.05, nominalPixelMeters(HIGH_RESOLUTION_FOOTPRINT_ZOOM, latitude))) + 12,
         12, 320
       );
-      async function loadHighResolutionFootprintTiles(items, tileLayer) {
+      async function loadHighResolutionFootprintTiles(items, tileLayer, signal = null) {
         const tileSize = 256;
         const zoom = HIGH_RESOLUTION_FOOTPRINT_ZOOM;
         const worldTiles = Math.pow(2, zoom);
@@ -3592,13 +4012,15 @@
         let next = 0, loaded = 0;
         async function worker() {
           while (next < selected.length) {
+            throwIfAnalysisAborted(signal);
             const tile = selected[next++];
             const key = zoom + "/" + tile.y + "/" + tile.wrappedX;
             try {
-              const canvas = await fetchImageToCanvas(tileLayer.getTileUrl({ x: tile.wrappedX, y: tile.y, z: zoom }));
+              const canvas = await fetchImageToCanvas(tileLayer.getTileUrl({ x: tile.wrappedX, y: tile.y, z: zoom }), signal);
               tiles.set(key, canvas);
               loaded++;
             } catch (error) {
+              if (signal?.aborted || error?.name === "AbortError") throw new DOMException("Analyse wurde abgebrochen.", "AbortError");
               console.warn("Hochauflösende Gebäudekachel fehlgeschlagen", key, error);
             }
             setAnalysisStatus("working", "Suche läuft", "Detailkacheln " + loaded + "/" + selected.length + " · Zoom " + zoom);
@@ -3657,7 +4079,21 @@
         };
       }
 
-      const ANALYSIS_AREA_SIDE_METERS = 1000;
+      const ANALYSIS_AREA_KM2_STORAGE_KEY = "lostplace_analysis_area_km2_v1";
+      function loadAnalysisAreaKm2() {
+        try { const value = Number(localStorage.getItem(ANALYSIS_AREA_KM2_STORAGE_KEY)); return Number.isFinite(value) && value >= 1 ? value : 1; }
+        catch { return 1; }
+      }
+      let analysisAreaKm2 = loadAnalysisAreaKm2();
+      let ANALYSIS_AREA_SIDE_METERS = Math.sqrt(analysisAreaKm2) * 1000;
+      function setAnalysisAreaKm2(value, persist = true) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed < 1) return false;
+        analysisAreaKm2 = parsed;
+        ANALYSIS_AREA_SIDE_METERS = Math.sqrt(analysisAreaKm2) * 1000;
+        if (persist) { try { localStorage.setItem(ANALYSIS_AREA_KM2_STORAGE_KEY, String(analysisAreaKm2)); } catch {} }
+        return true;
+      }
       function getTileRangeForMap(map, tileSize = 256, z = map.getZoom()) {
         const center = map.getCenter();
         const halfSide = ANALYSIS_AREA_SIDE_METERS / 2;
@@ -3838,8 +4274,13 @@
         updateAnalysisAreaOverlay(choice);
         $("zoomWarning").hidden = Boolean(choice);
         $("btnAnalyzeMap").disabled = analysis.searching || !choice;
+        $("btnCancelAnalysis").hidden = !analysis.searching;
+        $("btnCancelAnalysis").disabled = !analysis.searching || !analysis.abortController;
         if (analysis.searching) return;
-        if (analysis.error) {
+        if (analysis.cancelled) {
+          $("hitCount").textContent = "Analyse abgebrochen";
+          setAnalysisStatus("ready", "Analyse abgebrochen", "Der Suchlauf wurde beendet. Du kannst jederzeit eine neue Analyse starten.");
+        } else if (analysis.error) {
           $("hitCount").textContent = "— Treffer";
           setAnalysisStatus("error", "Analyse nicht bereit", analysis.error);
         } else if (analysis.lastRun?.meta?.manualOnly) {
@@ -3853,18 +4294,21 @@
           const detailSummary = Number(runMeta.validFootprintCount || 0)
             ? " · Detailbilder " + Number(runMeta.highResolutionBuildingCount || 0) + "/" + Number(runMeta.validFootprintCount)
             : "";
-          setAnalysisStatus("done", "Analyse fertig", "Letzte Suche: " + getVisibleCandidates().length + " Treffer sichtbar · Bereich " + sideKm + " × " + sideKm + " km" + detailSummary + ".");
+          const areaKm2 = Math.pow(Number(runMeta.mapView?.areaSideMeters || ANALYSIS_AREA_SIDE_METERS) / 1000, 2);
+          setAnalysisStatus("done", "Analyse fertig", "Letzte Suche: " + getVisibleCandidates().length + " Treffer sichtbar · Bereich " + areaKm2.toLocaleString("de-DE", {maximumFractionDigits:2}) + " km² (" + sideKm + " × " + sideKm + " km)" + detailSummary + ".");
         } else if (!choice) {
           setAnalysisStatus("zoom", "Noch nicht analysebereit", "Zoome näher an das Suchgebiet heran.");
         } else {
-          setAnalysisStatus("ready", "Analysebereit", "Analysebereich 1 × 1 km um Kartenmitte · Bildzoom " + choice.z + " · " + choice.count + " Kacheln · Esri RGB und OSM.");
+          setAnalysisStatus("ready", "Analysebereit", "Analysebereich " + analysisAreaKm2.toLocaleString("de-DE") + " km² (" + (ANALYSIS_AREA_SIDE_METERS / 1000).toLocaleString("de-DE", {maximumFractionDigits:2}) + " × " + (ANALYSIS_AREA_SIDE_METERS / 1000).toLocaleString("de-DE", {maximumFractionDigits:2}) + " km) um Kartenmitte · Bildzoom " + choice.z + " · " + choice.count + " Kacheln · Esri RGB und OSM.");
         }
       }
 
       map.on("zoomend moveend", updateAnalysisReadiness);
-      window.addEventListener("resize", () => { map.invalidateSize(); updateAnalysisReadiness(); });
+      map.on("zoomend moveend", scheduleDisplayedImageryYearRefresh);
+      window.addEventListener("resize", () => { map.invalidateSize(); updateAnalysisReadiness(); scheduleDisplayedImageryYearRefresh(); });
 
-      async function stitchCurrentMapViewToCanvas(tileLayer) {
+      async function stitchCurrentMapViewToCanvas(tileLayer, signal = null) {
+        throwIfAnalysisAborted(signal);
         const tileSize = 256;
         const chosen = chooseAnalysisMapView();
         if (!chosen) throw new Error("Der Ausschnitt überschreitet die lokale Speicher- oder Kachelgrenze. Zoome etwas hinein.");
@@ -3875,19 +4319,21 @@
         let next=0,done=0,failed=null;
         async function worker(){
           while(next<tiles.length&&!failed){
+            throwIfAnalysisAborted(signal);
             const t=tiles[next++];
             if(t.y<0||t.y>=Math.pow(2,z)){ done++; continue; }
             try{
               const worldTiles=Math.pow(2,z);
               const wrappedX=((t.x%worldTiles)+worldTiles)%worldTiles;
-              const tile=await fetchImageToCanvas(tileLayer.getTileUrl({x:wrappedX,y:t.y,z}));
+              const tile=await fetchImageToCanvas(tileLayer.getTileUrl({x:wrappedX,y:t.y,z}),signal);
               ctx.drawImage(tile,t.x*tileSize-pixelBounds.min.x,t.y*tileSize-pixelBounds.min.y);
               done++;
               setAnalysisStatus("working", "Suche läuft", "Satellitenkacheln " + done + "/" + count + " · Zoom " + z);
-            }catch(e){failed=e;}
+            }catch(e){if(signal?.aborted||e?.name==='AbortError')throw new DOMException("Analyse wurde abgebrochen.","AbortError");failed=e;}
           }
         }
         await Promise.all(Array.from({length:Math.min(6,tiles.length)},worker));
+        throwIfAnalysisAborted(signal);
         if(failed) throw new Error("Satellitenkacheln nicht lesbar (CORS/Netzwerk): "+(failed.message||failed));
         const nw=map.unproject(pixelBounds.min,z),se=map.unproject(pixelBounds.max,z);
         return {canvas,meta:{z,pixelMin:{x:pixelBounds.min.x,y:pixelBounds.min.y},
@@ -3899,7 +4345,10 @@
       async function analyzeMapView() {
         if (analysis.searching) return;
         if (!chooseAnalysisMapView()) { updateAnalysisReadiness(); return; }
+        const controller = new AbortController();
+        analysis.abortController = controller;
         analysis.searching = true;
+        analysis.cancelled = false;
         analysis.error = null;
         analysis.lastRun = null;
         analysis.candidates = [];
@@ -3908,27 +4357,48 @@
         overlayGroup.clearLayers();
         clearResultsUI();
         $("hitCount").textContent = "Suche läuft…";
+        $("btnCancelAnalysis").hidden = false;
+        $("btnCancelAnalysis").disabled = false;
         setAnalysisStatus("working", "Suche läuft", "Satellitenkacheln werden geladen…");
         updateAnalysisReadiness();
         try {
-          const { canvas: stitched, meta } = await stitchCurrentMapViewToCanvas(esri);
+          const { canvas: stitched, meta } = await stitchCurrentMapViewToCanvas(esri, controller.signal);
+          throwIfAnalysisAborted(controller.signal);
           analysisImage.width = stitched.width;
           analysisImage.height = stitched.height;
           const resolutionNote = meta.z <= 15 ? " · Großer Ausschnitt; kleine Dächer werden wegen zu weniger Bildpunkte übersprungen." : "";
           setAnalysisStatus("working", "Suche läuft", "Gebäudeumrisse und Dachmuster werden bei Bildzoom " + meta.z + " ausgewertet…" + resolutionNote);
-          await analyzeFromCanvas(stitched, meta);
+          await analyzeFromCanvas(stitched, meta, controller.signal);
+          throwIfAnalysisAborted(controller.signal);
           if (!analysis.error && analysis.lastRun) rememberAnalysisArea(meta.bounds);
         } catch (e) {
-          analysis.error = String(e?.message ?? e);
-          $("hitCount").textContent = "— Treffer";
-          setAnalysisStatus("error", "Analyse fehlgeschlagen", analysis.error);
+          if (controller.signal.aborted || e?.name === "AbortError") {
+            analysis.cancelled = true;
+            analysis.error = null;
+            $("hitCount").textContent = "Analyse abgebrochen";
+            setAnalysisStatus("ready", "Analyse abgebrochen", "Der Suchlauf wurde auf Wunsch beendet. Du kannst jederzeit eine neue Analyse starten.");
+            toast("Analyse abgebrochen", "Der laufende Suchlauf wurde beendet.");
+          } else {
+            analysis.error = String(e?.message ?? e);
+            $("hitCount").textContent = "— Treffer";
+            setAnalysisStatus("error", "Analyse fehlgeschlagen", analysis.error);
+          }
         } finally {
           analysis.searching = false;
+          analysis.abortController = null;
+          $("btnCancelAnalysis").hidden = true;
           updateAnalysisReadiness();
         }
       }
 
       $("btnAnalyzeMap").addEventListener("click", analyzeMapView);
+      $("btnCancelAnalysis").addEventListener("click", () => {
+        if (analysis.searching && analysis.abortController) {
+          $("btnCancelAnalysis").disabled = true;
+          analysis.abortController.abort();
+          setAnalysisStatus("working", "Breche Analyse ab …", "Laufende Netzwerkabfragen und Verarbeitung werden beendet.");
+        }
+      });
 
       // ------------------------------
       // Initial status
@@ -4004,22 +4474,116 @@
           });
         }
       }
+      $("analysisAreaKm2").value = String(analysisAreaKm2);
+      $("analysisAreaKm2").addEventListener("change", event => {
+        const value = Number(event.target.value);
+        if (!Number.isFinite(value) || value < 1) {
+          event.target.value = String(analysisAreaKm2);
+          toast("Ungültige Suchfläche", "Das Suchgebiet muss mindestens 1 km² groß sein.");
+          return;
+        }
+        setAnalysisAreaKm2(value);
+        event.target.value = String(analysisAreaKm2);
+        updateAnalysisReadiness();
+        scheduleDisplayedImageryYearRefresh();
+        toast("Suchgebiet geändert", "Neue Fläche: " + analysisAreaKm2.toLocaleString("de-DE") + " km². Sie wird beim nächsten Suchlauf verwendet.");
+      });
+      $("selfLearningEnabled").checked = selfLearningEnabled;
+      $("learningAnalysisEnabled").checked = learningAnalysisEnabled;
+      try {
+        localStorage.setItem(SELF_LEARNING_ENABLED_KEY, String(selfLearningEnabled));
+        localStorage.setItem(LEARNING_ANALYSIS_ENABLED_KEY, String(learningAnalysisEnabled));
+      } catch {}
+      function updateLearningSettingsStatus() {
+        const status = $("learningSettingsStatus");
+        if (!status) return;
+        const positiveCount = trainingForMethod().samples.filter(sample => sample.label === 1 &&
+          sample.meta?.algorithmVersion === VEGETATION_ALGORITHM_VERSION && sample.meta?.featureSchemaVersion === FEATURE_SCHEMA_VERSION).length;
+        status.textContent = !selfLearningEnabled
+          ? "Selbstlernen aus: Neue Rückmeldungen werden nicht gespeichert und haben keinen Einfluss. Bereits gespeicherte Daten bleiben erhalten."
+          : learningAnalysisEnabled
+            ? "Selbstlernen und Analyse-Einfluss an: Ja-Muster werden bevorzugt (" + positiveCount + " passende Ja-Beispiele gespeichert). Der Lernbonus ist auf 24 % begrenzt."
+            : "Selbstlernen an, Analyse-Einfluss aus: Rückmeldungen werden gespeichert, verändern aber nicht die Analysebewertung.";
+      }
+      $("selfLearningEnabled").addEventListener("change", event => {
+        selfLearningEnabled = event.target.checked;
+        if (!selfLearningEnabled) {
+          learningAnalysisEnabled = false;
+          $("learningAnalysisEnabled").checked = false;
+          try { localStorage.setItem(LEARNING_ANALYSIS_ENABLED_KEY, "false"); } catch {}
+        }
+        try { localStorage.setItem(SELF_LEARNING_ENABLED_KEY, String(selfLearningEnabled)); } catch {}
+        learningPatternCache = new WeakMap();
+        if (analysis.lastRun) { renderResults(); updateMapOverlay(); }
+        updateLearningSettingsStatus();
+      });
+      $("learningAnalysisEnabled").addEventListener("change", event => {
+        learningAnalysisEnabled = event.target.checked;
+        if (learningAnalysisEnabled) {
+          selfLearningEnabled = true;
+          $("selfLearningEnabled").checked = true;
+          try { localStorage.setItem(SELF_LEARNING_ENABLED_KEY, "true"); } catch {}
+        }
+        try { localStorage.setItem(LEARNING_ANALYSIS_ENABLED_KEY, String(learningAnalysisEnabled)); } catch {}
+        learningPatternCache = new WeakMap();
+        if (analysis.lastRun) { renderResults(); updateMapOverlay(); }
+        updateLearningSettingsStatus();
+        if (analysis.lastRun) toast("Analyse-Einfluss geändert", learningAnalysisEnabled
+          ? "Ja-Muster aus deinen Rückmeldungen beeinflussen ab jetzt die Priorisierung. Neue Rückmeldungen werden ebenfalls gelernt."
+          : "Die Grundanalyse bleibt aktiv; das Lernen beeinflusst die Bewertung nicht mehr.");
+      });
+      updateLearningSettingsStatus();
+      renderTrainingDataManager();
+      $("trainingDataMore").addEventListener("click", () => { trainingDataDisplayLimit += 120; renderTrainingDataManager(); });
+      $("exportTrainingData").addEventListener("click", exportTrainingData);
+      $("resetTrainingData").addEventListener("click", () => {
+        if (!window.confirm("Wirklich alle gespeicherten Lernbeispiele und das Trainingsarchiv in diesem Browser löschen? Diese Aktion kann nicht rückgängig gemacht werden.")) return;
+        trainingData.methods.building = EMPTY_METHOD_TRAINING();
+        trainingData.archive = { building: [], damage: [] };
+        if (saveTrainingData()) {
+          renderTrainingDataManager(); updateLearningSettingsStatus();
+          if (analysis.lastRun) { renderResults(); updateMapOverlay(); }
+          toast("Lernspeicher zurückgesetzt", "Alle aktiven Lernbeispiele und archivierten Trainingsdaten wurden lokal gelöscht.");
+        } else toast("Zurücksetzen fehlgeschlagen", "Der lokale Browserspeicher konnte nicht aktualisiert werden.");
+      });
       try { $("hideSpecialStatuses").checked = localStorage.getItem("lostplace_hide_special_statuses_v1") === "true"; } catch {}
       $("hideSpecialStatuses").addEventListener("change", event => {
         try { localStorage.setItem("lostplace_hide_special_statuses_v1", String(event.target.checked)); } catch {}
         if (analysis.lastRun) analysis.lastRun.hideSpecialStatuses = event.target.checked;
         renderResults(); updateMapOverlay();
       });
-      for (const id of ["minProbabilityBuilding","minAreaBuilding","maxArea","maxCandidates","minQualityBuilding","onlyResidential"]) {
-        $(id).addEventListener("change", () => { if (!analysis.lastRun) return; analysis.lastRun.minProbability = minimumScore(); analysis.lastRun.minAreaM2 = minimumArea(); analysis.lastRun.maxAreaM2 = Math.max(minimumArea() + 1, Number($("maxArea").value || 100000)); analysis.lastRun.minimumQualityTier = minimumQuality(); analysis.lastRun.onlyResidential = $("onlyResidential").checked; renderResults(); updateMapOverlay(); });
-      }
-      $("toggleHitOverlay").addEventListener("change", (event) => {
-        hitOverlayVisible = event.target.checked;
+      function refreshDisplayedResultFilters() {
+        if (!analysis.lastRun) return;
+        // Persist the latest UI values for actions such as saving a confirmed result,
+        // while getVisibleCandidates() also reads the controls as the single live source.
+        Object.assign(analysis.lastRun, currentDisplayedRunFilters());
+        // Both renderers consume getVisibleCandidates(), so the visible set is identical.
+        renderResults();
         updateMapOverlay();
-      });
-      $("toggleBuildingOutlines").addEventListener("change", event => setBuildingOutlinesVisible(event.target.checked));
-      $("downloadSavedResults").addEventListener("click", downloadSavedHits);
-      $("clearSavedResults").addEventListener("click", clearSavedHits);
+        const visibleCount = getVisibleCandidates().length;
+        $("hitCount").textContent = visibleCount + " Treffer";
+        $("analysisStateDetail").textContent = visibleCount + " Treffer sichtbar · Mindestscore " +
+          Math.round(minimumScore() * 100) + " · Filter werden live angewendet";
+      }
+      for (const id of ["minProbabilityBuilding","minAreaBuilding","maxArea","maxCandidates","minQualityBuilding","onlyResidential"]) {
+        // The input event fires on every keystroke; change covers select/checkbox and blur fallbacks.
+        $(id).addEventListener("input", refreshDisplayedResultFilters);
+        $(id).addEventListener("change", refreshDisplayedResultFilters);
+      }
+      const hitOverlayControl = $("toggleHitOverlay");
+      const handleHitOverlayToggle = event => {
+        const visible = Boolean(event.currentTarget.checked);
+        if (visible !== hitOverlayVisible) setHitOverlayVisible(visible);
+      };
+      hitOverlayControl.addEventListener("input", handleHitOverlayToggle);
+      hitOverlayControl.addEventListener("change", handleHitOverlayToggle);
+      const buildingOutlinesControl = $("toggleBuildingOutlines");
+      const handleBuildingOutlinesToggle = event => {
+        const visible = Boolean(event.currentTarget.checked);
+        if (visible !== buildingOutlinesVisible) setBuildingOutlinesVisible(visible);
+      };
+      buildingOutlinesControl.addEventListener("input", handleBuildingOutlinesToggle);
+      buildingOutlinesControl.addEventListener("change", handleBuildingOutlinesToggle);
       $("placeSearchForm").addEventListener("submit", (event) => {
         event.preventDefault();
         searchPlaces($("placeSearchInput").value);
@@ -4033,6 +4597,7 @@
       L.DomEvent.disableClickPropagation($("mapSearch"));
       L.DomEvent.disableScrollPropagation($("mapSearch"));
       updateAnalysisReadiness();
+      scheduleDisplayedImageryYearRefresh();
     </script>
   </body>
 </html>
